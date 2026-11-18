@@ -7,6 +7,7 @@
  *
  *   ev('1 + 1')            -> 2   (runs in the page, returnByValue)
  *   jsErrors               -> any uncaught exceptions the page threw while you worked
+ *   send / wait            -> raw CDP send() and a setTimeout promise, for emulation calls
  *
  * CHROME=/path/to/chrome to point at another build; default is a playwright chromium.
  */
@@ -62,7 +63,7 @@ module.exports = async function withPage(file, fn){
   await send('Page.navigate', { url });
   await wait(1000);
   try {
-    const out = await fn(ev, jsErrors);
+    const out = await fn(ev, jsErrors, { send, wait });
     ws.close(); chrome.kill();
     return out;
   } catch (e) { ws.close(); die('harness error: ' + e.message); }

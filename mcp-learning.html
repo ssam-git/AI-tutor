@@ -105,12 +105,13 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
 .row{display:grid;grid-template-columns:4.6em 5em 1fr;gap:.4em;animation:fade .3s;padding:.05em 0}
 .row .t{color:#4b5766;text-align:right}
 .row .b{font-weight:700;font-size:11px;letter-spacing:.02em}
-.row .m{white-space:pre-wrap}
+.row .m{white-space:pre-wrap;overflow-wrap:anywhere}   /* long tokens must not widen the page */
 .row .m em{color:var(--dim);font-style:normal}
 .row.client .b{color:var(--client)} .row.wire .b{color:var(--wire)} .row.server .b{color:var(--server)}
 .row.cur .m{color:#fff}
 .row.cur .b{color:var(--hi)}
-.wireblk,.noteblk{margin:.05em 0 .2em 10.4em;padding:.2em .45em;border-left:2px solid var(--line);white-space:pre-wrap;font-size:11px}
+.wireblk,.noteblk{margin:.05em 0 .2em 10.4em;padding:.2em .45em;border-left:2px solid var(--line);white-space:pre-wrap;
+  overflow-wrap:anywhere;font-size:11px}
 .wireblk{color:#c8b489;background:rgba(255,200,97,.06);border-left-color:#5d4b22}
 .noteblk{color:#93a2b6;background:rgba(80,140,255,.05);border-left-color:#2b3b52;font-style:italic}
 .noteblk.hide{display:none}
@@ -708,7 +709,7 @@ function wireEvents(d, P){
     if (dir === '<' && d.tr === 'http')
       push(p - 0.06, 'HTTP/1.1 200 ok\ncontent-type: application/json\nmessages arrive in the response body, or on an SSE stream when the call is still running', 'HTTP 200');
     const txt = (dir === '>' ? 'client \u2192 server   ' : 'server \u2192 client   ') +
-      J(obj).replace(/\n/g, '\n                    ') + '\n                    ' + bytesOf(body) + ' bytes';
+      J(obj).replace(/\n/g, '\n      ') + '\n      ' + bytesOf(body) + ' bytes';
     const label = obj.method ? obj.method : 'id ' + obj.id + ' ' + (obj.error ? 'error' : 'answer');
     push(p, txt, (dir === '>' ? '\u2192 ' : '\u2190 ') + label);
   };

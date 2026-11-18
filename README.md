@@ -24,7 +24,9 @@ violation.
 node dev/check-steps.js      # api-learning.html: 384 combos (6 scenarios x 4 API types x 4 x 4 languages)
 node dev/check-mcp.js        # mcp-learning.html:  48 combos (4 scenarios x 2 transports x 3 revisions x 2 langs)
 node dev/check-shared.js     # the ENGINE block copied into each page must stay byte-identical
+node dev/check-layout.js     # every scenario at 390x844: no page may be wider than the viewport
 CHROME=/path/to/chromium node dev/check-steps.js   # only if it cannot find a chromium to launch
+W=320 H=640 node dev/check-layout.js               # small-phone pass
 ```
 
 What they assert:
@@ -38,7 +40,12 @@ What they assert:
    multi round-trip retry strictly after the human answered;
 4. **protocol shape** (MCP only) — `2026-07-28` must show no `initialize` and no session id, older revisions must
    show no `server/discover`, `structuredContent` / `ttlMs` must be absent from `2025-03-26`, and stdio must
-   carry no HTTP at all.
+   carry no HTTP at all;
+5. **no sideways pages** — `check-layout.js` emulates a 390 px phone, runs every combination to the end in all
+   three views and asserts `document.scrollWidth` never exceeds the viewport. One long unbreakable token in a
+   pre-formatted block (a base64 `requestState`, say) is enough to make the document 634 px wide, and the
+   browser then scales the whole page down: it does not look scrolled, it looks broken. `overflow-wrap:anywhere`
+   on the trace blocks is what keeps that from coming back.
 
 If you change a code generator, a phase number or `buildSteps()`, run them before committing.
 
