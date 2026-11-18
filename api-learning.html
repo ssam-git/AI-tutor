@@ -504,10 +504,10 @@ function clPython(d){
   if (A === 'ws'){
     o.push(C('import asyncio, json, websockets'), C(''),
       L('c.setup', 'URI = "wss://' + d.host + d.wsPath + '"'),
-      L('c.setup', 'async def consume():'),
-      L('c.upgrade', '    async with websockets.connect(URI) as ws:   # GET + Upgrade: websocket'));
-    if (d.auth) o.push(L('c.headers', '        # websockets.connect(URI, subprotocols=["bearer ' + TOK + '"])  # the token rides the handshake'));
-    o.push(L('c.body', '    msg = ' + d.msgPy),
+      L('c.setup', 'async def consume():'));
+    if (d.auth) o.push(L('c.headers', '    # websockets.connect(URI, subprotocols=["bearer ' + TOK + '"])  # the token rides the handshake, before the upgrade'));
+    o.push(L('c.upgrade', '    async with websockets.connect(URI) as ws:   # GET + Upgrade: websocket'),
+      L('c.body', '    msg = ' + d.msgPy),
       L('c.sendFrame', '    await ws.send(json.dumps(msg))   # masked TEXT frame'));
     if (K === 'stream') o.push(L('c.fileOpen', '    f = open("movie.mp4", "wb")'),
       L('c.readChunk', '    async for frame in ws:                    # binary frames, ' + d.count + ' of them'),
@@ -523,15 +523,15 @@ function clPython(d){
     o.push(C('import grpc'), C('import ' + pn + '_pb2 as pb, ' + pn + '_pb2_grpc as pbg'), C(''),
       L('c.setup', 'channel = grpc.insecure_channel("localhost:8080")'),
       L('c.setup', 'stub = pbg.' + cap(pn) + 'Stub(channel)  # one HTTP/2 socket, multiplexed'));
-    if (d.auth) o.push(L('c.headers', 'creds = (("authorization", "Bearer ' + TOK + '"),)'));
     o.push(L('c.body', 'req = pb.' + d.type + '(' + Object.entries(d.fields).map(([k,v]) => k + '=' + pyLit(v)).join(', ') + ')'));
+    if (d.auth) o.push(L('c.headers', 'metadata = (("authorization", "Bearer ' + TOK + '"),)   # gRPC metadata = the headers of this call'));
     if (K === 'stream') o.push(
       L('c.fileOpen', 'f = open("movie.mp4", "wb")'),
       L('c.readChunk', 'for chunk in stub.' + d.rpc + '(req, timeout=30):   # server streaming, ' + d.count + ' messages'),
       L('c.write', '    f.write(chunk.bytes)'));
     else {
-      o.push(L('c.send', 'resp = stub.' + d.rpc + '(req, timeout=5' + (d.auth ? ', credentials=creds' : '') + ')'));
-      if (K === 'bytes') o.push(L('c.fileOpen', 'f = open("logo.png", "wb")'), L('c.decode', 'print(resp.content_type, len(resp.payload))'), L('c.write', 'f.write(resp.payload)'));
+      o.push(L('c.send', 'resp = stub.' + d.rpc + '(req, timeout=5' + (d.auth ? ', metadata=metadata' : '') + ')'));
+      if (K === 'bytes') o.push(L('c.decode', 'print(resp.content_type, len(resp.payload))'), L('c.fileOpen', 'f = open("logo.png", "wb")'), L('c.write', 'f.write(resp.payload)'));
       else o.push(L('c.recvHeaders', 'print(resp.code if False else "grpc-status: 0")'), L('c.decode', 'print(resp.count, [r.name for r in resp.results])'));
     }
     o.push(L('c.close', 'channel.close()'));
@@ -539,16 +539,18 @@ function clPython(d){
   }
   o.push(C('import requests'), C(''), L('c.setup', 'BASE = "https://' + d.host + '"'),
     L('c.setup', 'session = requests.Session()   # one socket, kept alive for later calls'));
-  if (d.auth) o.push(L('c.headers', 'session.headers["Authorization"] = "Bearer ' + TOK + '"'));
   if (A === 'graphql'){
     o.push(L('c.body', 'QUERY = ' + d.docPy), L('c.body', 'VARS  = ' + d.varsPy),
+      (d.auth ? L('c.headers', 'session.headers["Authorization"] = "Bearer ' + TOK + '"') : C('')),
       L('c.send', 'resp = session.post(BASE + "/graphql", json={"query": QUERY, "variables": VARS})'));
   } else {
     if (d.method === 'POST'){
       o.push(L('c.body', 'body = "' + d.bodyWire + '"   # form-encoded, not JSON'),
+        (d.auth ? L('c.headers', 'session.headers["Authorization"] = "Bearer ' + TOK + '"') : C('')),
         L('c.send', 'resp = session.post(BASE + "' + d.path + '", data=body, headers={"Content-Type": "' + d.ctypeReq + '"})'));
     } else {
       if (d.scenario.query) o.push(L('c.body', 'params = ' + d.qsPy));
+      if (d.auth) o.push(L('c.headers', 'session.headers["Authorization"] = "Bearer ' + TOK + '"'));
       o.push(L('c.send', 'resp = session.get(BASE + "' + d.url + '"' + (d.scenario.query ? ', params=params' : '') + ')'));
     }
   }
@@ -609,8 +611,8 @@ function clJs(d){
     C('const BASE = "https://' + d.host + '";'), C(''), L('c.setup', 'const headers = { Accept: "' + d.ctype + '"' + (d.auth ? ', Authorization: "Bearer ' + TOK + '"' : '') + ' };'));
   if (A === 'graphql'){
     o.push(L('c.body', 'const QUERY = ' + d.docJs), L('c.body', 'const VARS  = ' + d.varsJs),
-      L('c.send', 'const res = await fetch(BASE + "/graphql", { method: "POST", headers: { ...headers, "Content-Type": "application/json" },'),
-      L('c.body', '  body: JSON.stringify({ query: QUERY, variables: VARS }) });'));
+      L('c.body', 'const payload = JSON.stringify({ query: QUERY, variables: VARS });   // the POST body, serialised before the call'),
+      L('c.send', 'const res = await fetch(BASE + "/graphql", { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: payload });'));
   } else if (d.method === 'POST'){
     o.push(L('c.body', 'const body = "' + d.bodyWire + '";   // application/x-www-form-urlencoded'),
       L('c.send', 'const res = await fetch(BASE + "' + d.path + '", { method: "POST", headers: { ...headers, "Content-Type": "' + d.ctypeReq + '" }, body });'));
@@ -808,8 +810,8 @@ function svPython(d){
         L('s.body', '        return payload'),
         L('s.close', '        # grpc-status: 0 goes in HTTP/2 TRAILERS'));
     }
-    o.push(C(''), L('s.setup', 'server = aio.server()'),
-      L('s.setup', 'pbg.' + cap(d.svc.split('.')[0]) + 'Rpc.add_to_port(server.add_insecure_port("[::]:8080"), Servicer())'));
+    o.push(C(''), L('s.serve', 'server = aio.server()'),
+      L('s.serve', 'pbg.' + cap(d.svc.split('.')[0]) + 'Rpc.add_to_port(server.add_insecure_port("[::]:8080"), Servicer())   # back to the event loop'));
     return o;
   }
   const imp = A === 'graphql' ? 'from graphql import parse, validate, execute, build_schema' : 'from fastapi import FastAPI, Header, Query, Body, FileResponse, StreamingResponse, JSONResponse';
@@ -823,7 +825,7 @@ function svPython(d){
       d.auth ? L('s.auth', '    ctx = verify(request.headers["authorization"])') : C('    ctx = None  # no bearer token yet: this endpoint authenticates from the body'),
       L('s.dispatch', '    result = execute(SCHEMA, doc, context_value=ctx, variable_values=body["variables"])'),
       C(''),
-      L('s.dispatch', 'def resolve_' + d.gqlField + '(info, ' + d.gqlArgs.join(', ') + '):   # resolver, dispatched per field in the selection set'),
+      L('s.resolver', 'def resolve_' + d.gqlField + '(info, ' + d.gqlArgs.join(', ') + '):   # the resolver execute() called, written inline here'),
       d.dbSql ? L('s.db', '    rows = db.fetch(DB, ' + Object.keys(d.vars).map(v => 'f"%{' + v + '}%"').join(', ') + ')  # ' + d.dbMs + ' ms')
               : L('s.db', '    rows = cache.get(' + Object.keys(d.vars)[0] + ')  # cache hit, ' + d.dbMs + ' ms'),
       L('s.serialize', '    return rows   # the response layer writes {"data": ...}'),
@@ -841,8 +843,8 @@ function svPython(d){
     o.push(L('s.headers', '    # status 200 + transfer-encoding: chunked written before the first byte'),
       L('s.body', '    return StreamingResponse(chunks("movie.mp4"), media_type="application/octet-stream")'),
       C(''),
-      L('s.route', 'async def chunks(path):'),
-      L('s.route', '    async with open_file(path) as f:'),
+      L('s.helper', 'async def chunks(path):'),
+      L('s.helper', '    async with open_file(path) as f:'),
       L('s.writeChunk', '        while chunk := await f.read(' + d.chunkSize + '):   # ' + d.count + ' flushes'),
       L('s.writeChunk', '            yield chunk'),
       L('s.close', '            # 0-length terminating chunk, then close'));
@@ -890,7 +892,7 @@ function svJs(d){
       L('s.setup', 'const wss = new WebSocketServer({ path: "' + d.wsPath + '" });'),
       L('s.route', 'wss.on("upgrade", (req, socket, head) => {   // server answers 101 Upgrade'),
       L('s.accept', '  const ws = accept(req, socket, head);'),
-      L('s.route', '  ws.on("message", (raw) => {'),
+      L('s.helper', '  ws.on("message", (raw) => {   // registered now, runs when a frame lands'),
       L('s.receiveFrame', '    const op = JSON.parse(raw);   // one text frame, 148 bytes'),
       L('s.parse', '    const channel = op.channel;'),
       d.auth ? L('s.auth', '    const who = await auth.verify(ws.subprotocol);') : C('    // unauthenticated demo channel'),
@@ -912,8 +914,8 @@ function svJs(d){
       d.dbSql ? L('s.db', '    const rows = db.query(DB, [req.' + Object.keys(d.fields)[0] + ', req.' + (Object.keys(d.fields)[1] || 'limit') + ']);   // ' + d.dbMs + ' ms')
               : L('s.db', '    const rows = cache.get(req.' + Object.keys(d.fields)[0] + ');   // HIT, ' + d.dbMs + ' ms'));
     if (K === 'stream'){
-      o.push(L('s.serialize', '    rows.forEach((row, i) => call.write({ bytes: read_block(' + d.chunkSize + ') }));   // one message per frame'),
-        L('s.writeChunk', '    rows.forEach((row, i) => call.write({ bytes: read_block(' + d.chunkSize + ') }));   // ' + d.count + ' messages'),
+      o.push(L('s.serialize', '    const next = () => pb.' + d.rt + '({ bytes: read_block(' + d.chunkSize + ') });   // one protobuf message per chunk'),
+        L('s.writeChunk', '    rows.forEach((row, i) => call.write(next()));   // ' + d.count + ' messages'),
         L('s.close', '    call.end();   // END_STREAM + grpc-status: 0 trailers'));
     } else if (K === 'bytes'){
       o.push(L('s.serialize', '    const payload = fs.readFileSync("logo.png");'),
@@ -924,7 +926,7 @@ function svJs(d){
         L('s.body', '    call.respond(payload);'),
         L('s.close', '    // status is HTTP/2 HEADERS, grpc-status is TRAILERS'));
     }
-    o.push(L('s.setup', '});'), L('s.setup', 'server.addInsecurePort("[::]:8080", grpc.ServerCredentials.createInsecure());'));
+    o.push(C('});'), L('s.serve', 'server.addInsecurePort("[::]:8080", grpc.ServerCredentials.createInsecure());   // back to the event loop'));
     return o;
   }
   const imp = A === 'graphql' ? 'const { buildSchema, graphql } = require("graphql");' : 'const express = require("express");';
@@ -932,17 +934,17 @@ function svJs(d){
     ? L('s.setup', 'const schema = buildSchema(readFileSync("schema.graphql", "utf8"));')
     : L('s.setup', 'const app = express();'));
   if (A === 'graphql'){
-    o.push(L('s.route', 'async function ' + d.gqlField + '({ ' + d.gqlArgs.join(', ') + ' }) {   // resolver, dispatched per selection set'),
-      d.auth ? L('s.auth', '  await auth.verify(ctx.token);') : C('  // public field: no token check here'),
-      d.dbSql ? L('s.db', '  const rows = await db.query(DB, [' + Object.keys(d.vars).join(', ') + ']);   // ' + d.dbMs + ' ms')
-              : L('s.db', '  const rows = cache.get(' + Object.keys(d.vars)[0] + ');   // HIT, ' + d.dbMs + ' ms'),
-      L('s.serialize', '  return rows;'),
-      L('s.close', '}'), C(''),
-      L('s.route', 'app.post("/graphql", (req, res) => {'),
+    o.push(L('s.route', 'app.post("/graphql", (req, res) => {'),
       L('s.parse', '  const { query, variables } = req.body;'),
       L('s.parse', '  const doc = parse(query), errors = validate(schema, doc);   // reject unknown fields'),
       d.auth ? L('s.auth', '  const ctx = { token: req.headers.authorization };') : C('  const ctx = {};'),
-      L('s.dispatch', '  graphql({ schema, source: query, rootValue: { ' + d.gqlField + ' }, variableValues: variables, contextValue: ctx })'),
+      L('s.dispatch', '  graphql({ schema, source: query, variableValues: variables, contextValue: ctx, rootValue: {'),
+      L('s.resolver', '    ' + d.gqlField + ': async ({ ' + d.gqlArgs.join(', ') + ' }, ctx) => {   // the resolver this dispatch calls, written inline here'),
+      d.auth ? L('s.authField', '      await auth.verify(ctx.token);') : C('      // public field: no token check here'),
+      d.dbSql ? L('s.db', '      const rows = await db.query(DB, [' + Object.keys(d.vars).join(', ') + ']);   // ' + d.dbMs + ' ms')
+              : L('s.db', '      const rows = cache.get(' + Object.keys(d.vars)[0] + ');   // HIT, ' + d.dbMs + ' ms'),
+      L('s.serialize', '      return rows;'),
+      C('    } } }),'),
       L('s.body', '    .then((r) => res.json({ data: r.data }));   // {"data":...} or {"errors":[...]}, still 200'),
       L('s.close', '});'));
     return o;
@@ -1007,7 +1009,7 @@ function svJava(d){
       L('s.body', '    return payload;'),
       L('s.close', '    // status is HEADERS, grpc-status is TRAILERS'));
     o.push(L('s.close', '  }'), L('s.close', '}'), C(''),
-      L('s.setup', 'GrpcServer.insecure(8080).add(new IndexService()).start();'));
+      L('s.serve', 'GrpcServer.insecure(8080).add(new IndexService()).start();   // back to the event loop'));
     return o;
   }
   if (A === 'ws'){
@@ -1028,17 +1030,17 @@ function svJava(d){
   if (A === 'graphql'){
     o.push(L('s.setup', '  @Graphql'),
       L('s.setup', '  public Schema schema = Schema.from(readFile("schema.graphql"));'), C(''),
-      L('s.route', '  @GraphqlIgnore'),
-      L('s.route', '  public ' + d.gqlCap + 'Result ' + d.gqlField + '(' + d.gqlJavaArgs + ') {   // resolver dispatched per field'),
-      d.auth ? L('s.auth', '    auth.verify(currentContext().token());') : C('    // public field: no token check here'),
+      L('s.route', '  @RequestMapping(value = "/graphql", method = POST)'),
+      L('s.parse', '  public ExecutionResult view(GraphqlRequest req) {   // parse + validate the client document'),
+      L('s.dispatch', '    return executor.execute(schema.parse(req.query()), req.variables(), currentContext());'), C(''),
+      L('s.resolver', '  // the resolver execute() dispatches into, flattened here so the highlight only walks down:'),
+      L('s.resolver', '  public ' + d.gqlCap + 'Result ' + d.gqlField + '(' + d.gqlJavaArgs + ') {'),
+      d.auth ? L('s.authField', '    auth.verify(currentContext().token());') : C('    // public field: no token check here'),
       d.dbSql ? L('s.db', '    var rows = jdbc.query(DB, ' + Object.keys(d.vars).join(', ') + ');   // ' + d.dbMs + ' ms, ' + rowsN(d.dbRows))
               : L('s.db', '    var rows = cache.get(' + Object.keys(d.vars)[0] + ');   // HIT, ' + d.dbMs + ' ms'),
       L('s.serialize', '    return new ' + d.gqlCap + 'Result(rows);'),
-      L('s.close', '  }'), C(''),
-      L('s.route', '  @RequestMapping(value = "/graphql", method = POST)'),
-      L('s.parse', '  public ExecutionResult view(GraphqlRequest req) {   // parse + validate the client document'),
-      L('s.dispatch', '    return executor.execute(schema.parse(req.query()), req.variables(), currentContext());'),
-      L('s.body', '    // {"data": ...} -> application/json, Content-Length: ' + d.size),
+      C('  }'), C(''),
+      L('s.body', '  // execute() returns -> {"data": ...} as application/json, Content-Length: ' + d.size),
       L('s.close', '  }'));
     return o;
   }
@@ -1107,7 +1109,7 @@ function svCSharp(d){
       L('s.body', '    return payload;'),
       L('s.close', '    // grpc-status lives in response trailers'));
     o.push(L('s.close', '  }'), L('s.close', '}'), C(''),
-      L('s.setup', 'Server.Create(8080).Add(IndexService.Create()).Start();'));
+      L('s.serve', 'Server.Create(8080).Add(IndexService.Create()).Start();   // back to the event loop'));
     return o;
   }
   if (A === 'ws'){
@@ -1133,17 +1135,16 @@ function svCSharp(d){
       L('s.parse', '  var doc = Parser.Parse(ctx.Request.Body);   // the document the client wrote'),
       L('s.parse', '  foreach (var e in Validator.Validate(schema, doc)) ctx.AppendError(e);   // parse + validate first'),
       d.auth ? L('s.auth', '  var graphqlCtx = new GraphQLContext { Token = ctx.Header("Authorization") };') : C('  var graphqlCtx = new GraphQLContext();'),
-      L('s.dispatch', '  var result = await ExecuteAsync(new ExecutionOptions { Schema = schema, Document = doc, Context = graphqlCtx, VariableValues = Json.Parse(ctx.Body["variables"]) });'),
+      L('s.dispatch', '  var result = await ExecuteAsync(new ExecutionOptions { Schema = schema, Document = doc,'),
+      L('s.dispatch', '      Context = graphqlCtx, VariableValues = Json.Parse(ctx.Body["variables"]), Resolver = new Resolver({'),
+      L('s.resolver', '    ' + d.gqlCap + 'Async: async (GraphQLContext ctx, ' + d.gqlCArgs + ') => {   // the resolver this dispatch calls, written inline here'),
+      d.auth ? L('s.authField', '        await Auth.VerifyAsync(ctx.Token);') : C('        // public field: no token check here'),
+      d.dbSql ? L('s.db', '        var rows = await db.QueryAsync(DB, new { ' + Object.keys(d.vars).join(', ') + ' });   // ' + d.dbMs + ' ms')
+              : L('s.db', '        var rows = cache.Get(' + Object.keys(d.vars)[0] + ');   // HIT, ' + d.dbMs + ' ms'),
+      L('s.serialize', '        return rows;'),
+      C('  }) });'),
       L('s.body', '  await ctx.RespondJsonAsync(new { data = result.Data });   // {"data":...} or {"errors":[...]}, still 200'),
-      L('s.close', '});'), C(''),
-      L('s.route', 'public class ' + d.gqlCap + 'Query {'),
-      L('s.route', '  public static async Task<List<object>> ' + d.gqlCap + 'Async(GraphQLContext ctx, ' + d.gqlCArgs + ') {'),
-      d.auth ? L('s.auth', '    await Auth.VerifyAsync(ctx.Token);') : C('    // public field: no token check here'),
-      d.dbSql ? L('s.db', '    var rows = await db.QueryAsync(DB, new { ' + Object.keys(d.vars).join(', ') + ' });   // ' + d.dbMs + ' ms')
-              : L('s.db', '    var rows = cache.Get(' + Object.keys(d.vars)[0] + ');   // HIT, ' + d.dbMs + ' ms'),
-      L('s.serialize', '    return rows;'),
-      L('s.close', '  }'),
-      L('s.close', '}'));
+      L('s.close', '}));'));
     return o;
   }
   o.push(L('s.route', 'app.Map' + (d.method === 'POST' ? 'Post' : 'Get') + '("' + d.path + '", async (ctx) => {'),
@@ -1193,29 +1194,29 @@ const SERVER = { python:svPython, js:svJs, java:svJava, csharp:svCSharp };
 const PH_BASE = {
   rest:{ 'c.setup':10,'c.body':22,'c.headers':26,'c.send':30,'c.upgrade':30,'c.sendFrame':30,'c.recvHeaders':70,'c.recv101':42,
     'c.decode':74,'c.use':78,'c.fileOpen':68,'c.readChunk':59,'c.write':59.5,'c.close':82,
-    's.setup':12,'s.route':45,'s.parse':47,'s.dispatch':51,'s.auth':53,'s.db':56,'s.serialize':60,'s.headers':62,'s.body':65,'s.writeChunk':58,'s.accept':38,'s.receiveFrame':44,'s.close':72 },
+    's.setup':12,'s.route':45,'s.parse':47,'s.dispatch':51,'s.resolver':52,'s.helper':53,'s.auth':53,'s.db':56,'s.serialize':60,'s.headers':62,'s.body':65,'s.writeChunk':58,'s.accept':38,'s.receiveFrame':44,'s.close':72 },
   graphql:null, grpc:null, ws:null,
 };
-PH_BASE.graphql = Object.assign({}, PH_BASE.rest, { 's.dispatch':51, 's.db':54, 's.serialize':58 });
+PH_BASE.graphql = Object.assign({}, PH_BASE.rest, { 's.auth':49, 's.dispatch':51, 's.resolver':52, 's.authField':53, 's.db':54, 's.serialize':58 });
 PH_BASE.grpc = { 'c.setup':10,'c.body':22,'c.headers':26,'c.send':30,'c.recvHeaders':72,'c.recv101':42,'c.decode':76,'c.use':80,
   'c.fileOpen':70,'c.readChunk':59,'c.write':59.5,'c.close':84,
-  's.setup':12,'s.route':44,'s.parse':46,'s.dispatch':51,'s.auth':48,'s.db':52,'s.serialize':56,'s.headers':60,'s.body':66,'s.writeChunk':58,'s.accept':38,'s.receiveFrame':44,'s.close':74 };
-PH_BASE.ws = { 'c.setup':10,'c.body':20,'c.headers':24,'c.upgrade':28,'c.sendFrame':44,'c.recv101':42,'c.recvHeaders':42,'c.decode':55.6,
+  's.setup':12,'s.route':44,'s.parse':46,'s.dispatch':51,'s.resolver':52,'s.helper':53,'s.auth':48,'s.db':52,'s.serialize':56,'s.headers':60,'s.body':66,'s.writeChunk':58,'s.accept':38,'s.receiveFrame':44,'s.close':74,'s.serve':78 };
+PH_BASE.ws = { 'c.setup':10,'c.headers':24,'c.upgrade':28,'c.body':30,'c.sendFrame':44,'c.recv101':42,'c.recvHeaders':42,'c.decode':55.6,
   'c.use':64,'c.fileOpen':46,'c.readChunk':55.2,'c.write':55.4,'c.close':66,
-  's.route':36,'s.accept':38,'s.receiveFrame':46,'s.parse':48,'s.dispatch':49,'s.auth':49.5,'s.db':51,'s.serialize':54,'s.headers':37,'s.body':54,'s.writeChunk':54,'s.setup':12,'s.close':62 };
+  's.route':36,'s.accept':38,'s.helper':39,'s.receiveFrame':46,'s.parse':48,'s.dispatch':49,'s.resolver':49,'s.auth':49.5,'s.db':51,'s.serialize':54,'s.headers':37,'s.body':54,'s.writeChunk':54,'s.setup':12,'s.close':62 };
 
 function phases(d){
   const P = Object.assign({}, PH_BASE[d.api]);
   if (d.eff === 'stream'){
     if (d.api !== 'ws'){
-      P['s.headers'] = 50; P['s.body'] = 52; P['c.recvHeaders'] = 54; P['c.fileOpen'] = 55;
+      P['s.auth'] = 47.5; P['s.db'] = 48.5; P['s.headers'] = 50; P['s.body'] = 52; P['s.helper'] = 53; P['c.recvHeaders'] = 54; P['c.fileOpen'] = 55;
       P['s.writeChunk'] = 58; P['c.readChunk'] = 59; P['c.write'] = 59.5; P['s.close'] = 74; P['c.close'] = 78;
     }
   } else if (d.eff === 'frames'){
     P['s.headers'] = 37; P['s.body'] = 54; P['c.recvHeaders'] = 42;
-    P['s.writeChunk'] = 54; P['c.readChunk'] = 55.2; P['c.decode'] = 55.6; P['s.close'] = 62; P['c.close'] = 66;
+    P['s.writeChunk'] = 54; P['c.readChunk'] = 55.2; P['c.decode'] = 55.6; P['s.close'] = 74; P['c.close'] = 70;
   } else if (d.kind === 'bytes'){
-    P['c.fileOpen'] = 72; P['c.write'] = 76; P['c.decode'] = 74;
+    P['c.decode'] = 72; P['c.fileOpen'] = 74; P['c.write'] = 76;
   }
   return P;
 }
@@ -1227,7 +1228,7 @@ const REPEAT = {
 const SIDE = { client:'client', server:'server' };
 const MS = { 'c.setup':3,'c.body':1,'c.headers':1,'c.send':2,'c.upgrade':2,'c.sendFrame':1,'c.recvHeaders':1,'c.recv101':1,
   'c.decode':4,'c.use':1,'c.fileOpen':1,'c.readChunk':15,'c.write':12,'c.close':1,
-  's.setup':2,'s.route':2,'s.parse':3,'s.dispatch':2,'s.db':null,'s.serialize':3,'s.headers':1,'s.body':5,'s.writeChunk':40,
+  's.setup':2,'s.route':2,'s.parse':3,'s.dispatch':2,'s.resolver':2,'s.authField':3,'s.helper':1,'s.serve':2,'s.db':null,'s.serialize':3,'s.headers':1,'s.body':5,'s.writeChunk':40,
   's.accept':1,'s.receiveFrame':2,'s.close':1 };
 
 
@@ -1267,6 +1268,14 @@ function traceMsg(key, d, i, n){
       note:'Validate cheap things here, before touching storage.' };
     case 's.dispatch': return { m:'server: dispatch into resolver / RPC implementation', w:null,
       note:'One request can fan out into several resolvers; each one is a separate function call.' };
+    case 's.resolver': return { m:'server: the resolver / RPC body for this field starts', w:null,
+      note:'The line above dispatched into it. Written below so the highlight keeps walking down the page — in real code this function is usually defined the other way round.' };
+    case 's.serve': return { m:'server: back to the event loop, listening for the next call', w:null,
+      note:'The listener opened once at boot; every call you trace here is handled by that same loop.' };
+    case 's.helper': return { m:'server: enter the generator / callback that does the actual writing', w:null,
+      note:'This body only runs when the framework pulls the first chunk — the handler above merely handed it over.' };
+    case 's.authField': return { m:'server: verify credential inside the resolver (' + (d.sc === 'auth' ? 'password hash compare' : 'bearer token lookup') + ')', w:null,
+      note:'Field-level auth: the document already got dispatched, so this check runs per resolver, not per request.' };
     case 's.auth': return { m:'server: verify credential (' + (d.sc === 'auth' ? 'password hash compare' : 'bearer token lookup') + ')', w:null,
       note:'Auth is often the expensive half of a cheap request — cache the decision, not just the data.' };
     case 's.db': return { m:'server: ' + (d.dbSql ? 'execute SQL -> ' + rowsN(d.dbRows) : 'cache HIT -> ' + d.dbMs + ' ms, no DB round trip'),
@@ -1357,19 +1366,47 @@ function hex(n){ return n.toString(16).toUpperCase() + '  (' + n + ')'; }
 
 function buildSteps(cl, sv, d){
   const P = phases(d);
-  const items = [];
-  cl.forEach((ln, i) => { if (ln.k) items.push({ k:ln.k, side:'client', line:i, txt:ln.t.trim() }); });
-  sv.forEach((ln, i) => { if (ln.k) items.push({ k:ln.k, side:'server', line:i, txt:ln.t.trim() }); });
+  // one side's steps, in the order their lines appear in the file (repeated lines expand in place)
+  const seq = (lines, side) => {
+    const items = [];
+    lines.forEach((ln, ix) => {
+      if (!ln.k) return;
+      const k = ln.k;
+      if (!(k in P)) console.warn('no phase for key', k);
+      items.push({ k, side, line: ix, txt: ln.t.trim(), n: Math.max(1, REPEAT[k] ? REPEAT[k](d) : 1) });
+    });
+    const a = [];
+    for (let i = 0; i < items.length;){
+      /* consecutive lines that repeat the same number of times are one loop body: expand it per
+         iteration, so the walk reads read -> write -> read -> write instead of running one line
+         eight times and then the next line eight times. */
+      let j = i + 1;
+      if (items[i].n > 1) while (j < items.length && items[j].n === items[i].n) j++;
+      const group = items.slice(i, j);
+      for (let r = 0; r < items[i].n; r++)
+        group.forEach(g => a.push({ k: g.k, side: g.side, line: g.line, txt: g.txt, i: r, n: g.n, p: (g.k in P ? P[g.k] : 99) + r * (STEP[g.k] || 0) }));
+      i = j;
+    }
+    return a;
+  };
+  const A = seq(cl, 'client'), B = seq(sv, 'server');
+  const W = wireEvents(d, P).map(w => ({ k: null, side: 'wire', txt: w.txt, short: w.short, i: 0, n: 1, p: w.p }));
+  W.sort((x, y) => x.p - y.p);
+
+  /* Merge the three streams by phase number, but never take a step out of its own file's order:
+     a pane's highlight can therefore only move down the page. The phase number decides how the
+     client, the server and the wire interleave — it can no longer reorder lines inside a pane. */
   const out = [];
-  for (const it of items){
-    if (!(it.k in P)) console.warn('no phase for key', it.k);
-    const base = (it.k in P) ? P[it.k] : 99;
-    const n = Math.max(1, REPEAT[it.k] ? REPEAT[it.k](d) : 1);
-    for (let i = 0; i < n; i++)
-      out.push({ k:it.k, side:it.side, line:it.line, txt:it.txt, i, n, p: base + i*(STEP[it.k] || 0) });
+  let i = 0, j = 0, k = 0;
+  while (i < A.length || j < B.length || k < W.length){
+    const head = [];
+    if (i < A.length) head.push([A[i].p, 0]);
+    if (j < B.length) head.push([B[j].p, 1]);
+    if (k < W.length) head.push([W[k].p, 2]);
+    head.sort((x, y) => x[0] - y[0] || x[1] - y[1]);   // tie: client, then server, then wire
+    const which = head[0][1];
+    out.push(which === 0 ? A[i++] : which === 1 ? B[j++] : W[k++]);
   }
-  wireEvents(d, P).forEach(w => out.push({ k:null, side:'wire', txt:w.txt, short:w.short, i:0, n:1, p:w.p }));
-  out.sort((a, b) => a.p - b.p);
   let t = 0;
   for (const s of out){
     const ms = s.side === 'wire' ? 1 : s.k === 's.db' ? (d.dbMs || 2)
