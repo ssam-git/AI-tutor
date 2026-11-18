@@ -1,9 +1,7 @@
 /*
  * Regression checks for the step model in api-learning.html.
- * Drives headless Chromium over CDP (no test framework needed).
  *
- *   CHROME=/path/to/chrome node dev/check-steps.js [path-to-html]
- *   (defaults to a playwright-installed chromium and ../api-learning.html)
+ *   node dev/check-steps.js [path-to-html]        (defaults to ../api-learning.html)
  *
  * Three checks over every scenario x API type x client language x server language
  * combination (6 x 4 x 4 x 4 = 384):
@@ -20,40 +18,9 @@
  *                    bytes after the client sends them, the route match after they land, the
  *                    client's decode after the response bytes arrive, and so on.
  */
-const { spawn } = require('child_process');
-const path = require('path');
+const withPage = require('./cdp');
 
-const CHROME = process.env.CHROME ||
-  ['/home/sam/.cache/ms-playwright/chromium-1148/chrome-linux/chrome',
-   '/usr/bin/chromium', '/usr/bin/google-chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
-    .find(p => { try { require('fs').accessSync(p); return true; } catch (e) { return false; } });
-const PAGE = 'file://' + path.resolve(process.argv[2] || path.join(__dirname, '..', 'api-learning.html'));
-const PORT = 9400 + (process.pid % 50);
-if (!CHROME) { console.error('no chromium found - set CHROME=/path/to/chrome'); process.exit(2); }
-
-(async () => {
-  const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu',
-    '--remote-debugging-port=' + PORT, '--user-data-dir=/tmp/ai-tutor-check', 'about:blank'], { stdio: ['ignore', 'pipe', 'pipe'] });
-  const wait = ms => new Promise(r => setTimeout(r, ms));
-  let target;
-  for (let i = 0; i < 60; i++) {
-    try { const l = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json(); target = l.find(t => t.type === 'page'); if (target) break; } catch (e) {}
-    await wait(250);
-  }
-  if (!target) { console.error('could not reach the chromium devtools endpoint'); chrome.kill(); process.exit(2); }
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  let mid = 0; const pending = new Map(); const jsErrors = [];
-  const send = (method, params = {}) => new Promise((res, rej) => { const id = ++mid; pending.set(id, { res, rej }); ws.send(JSON.stringify({ id, method, params })); });
-  ws.addEventListener('message', e => {
-    const m = JSON.parse(e.data);
-    if (m.id && pending.has(m.id)) { const q = pending.get(m.id); pending.delete(m.id); m.error ? q.rej(new Error(JSON.stringify(m.error))) : q.res(m.result); }
-    else if (m.method === 'Runtime.exceptionThrown') jsErrors.push(String(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text).split('\n')[0]);
-  });
-  await new Promise(r => ws.addEventListener('open', r));
-  await send('Page.enable');
-  const ev = async expr => { const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails.exception?.description || r.exceptionDetails)); return r.result.value; };
-  await send('Page.navigate', { url: PAGE }); await wait(1200);
-
+withPage(process.argv[2] || '../api-learning.html', async (ev, jsErrors) => {
   const res = await ev(`(() => {
     const lineInv = [], phaseInv = [], causal = [], warn = [];
     const warn0 = console.warn; console.warn = (m, k) => warn.push(String(m) + ' ' + String(k));
@@ -107,6 +74,5 @@ if (!CHROME) { console.error('no chromium found - set CHROME=/path/to/chrome'); 
   show('3. wire events keep causal order', res.causal, 0);
   console.log('unknown phase keys: ' + (res.warn.length ? uniq(res.warn).join(' | ') : 'none'));
   console.log('JS errors: ' + (jsErrors.length ? uniq(jsErrors).join(' | ') : 'none'));
-  ws.close(); chrome.kill();
   process.exitCode = (res.lineInv.length || res.phaseInv.length || res.causal.length || res.warn.length || jsErrors.length) ? 1 : 0;
-})().catch(e => { console.error('harness error: ' + e.message); try { chrome.kill(); } catch (x) {} process.exit(2); });
+});

@@ -39,11 +39,12 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
 /* ---------- top pane ---------- */
 #top{background:var(--pane);border:1px solid var(--line);border-radius:9px;padding:8px 11px;
   display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:start}
-.pick{display:flex;gap:7px;align-items:center;margin-top:6px}
+.pick{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:6px}
 .pick label{font-size:11px;color:var(--dim)}
 .pick select{min-width:21ch;text-align:left}
 .back{font-size:11.5px;color:var(--dim);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:4px 8px;white-space:nowrap}
 .back:hover{color:var(--tx);border-color:#3c4b5e}
+#topRow .links{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 #topRow{display:flex;gap:14px;align-items:baseline;justify-content:space-between}
 #about{margin-top:2px}
 #about>summary{display:none}
@@ -216,7 +217,10 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
   <div>
     <div id="topRow">
       <h1>API Learning Sandbox <small>watch one API call travel: client code → wire → server code → wire → client code</small></h1>
+      <span class="links">
+        <a class="back" href="mcp-learning.html" title="the other sandbox: same console, different protocol">MCP sandbox &rarr;</a>
       <a class="back" href="./" title="more AI-built tutorials">&larr; all projects</a>
+      </span>
     </div>
     <div class="pick"><label for="exSel">Scenario</label><select id="exSel" title="pick a scenario"></select></div>
     <details id="about" open>
@@ -1367,6 +1371,10 @@ function wireEvents(d, P){
 }
 function hex(n){ return n.toString(16).toUpperCase() + '  (' + n + ')'; }
 
+/* ==== ENGINE START ==== */
+/* Keep this block byte-identical in api-learning.html and mcp-learning.html.
+   dev/check-shared.js fails the build if the two copies drift. It only calls
+   phases(d), REPEAT, STEP, wireEvents(d, P) and stepMs(s, d), which each page defines. */
 function buildSteps(cl, sv, d){
   const P = phases(d);
   // one side's steps, in the order their lines appear in the file (repeated lines expand in place)
@@ -1411,13 +1419,17 @@ function buildSteps(cl, sv, d){
     out.push(which === 0 ? A[i++] : which === 1 ? B[j++] : W[k++]);
   }
   let t = 0;
-  for (const s of out){
-    const ms = s.side === 'wire' ? 1 : s.k === 's.db' ? (d.dbMs || 2)
-      : s.k === 's.auth' ? (d.sc === 'auth' ? 240 : 3)
-      : (MS[s.k] || 2);
-    s.t = t; t += ms;
-  }
+  for (const s of out){ s.t = t; t += stepMs(s, d); }
   return { steps: out, P };
+}
+/* ==== ENGINE END ==== */
+
+/* per-step simulated cost, milliseconds (this part is specific to each tutorial) */
+function stepMs(s, d){
+  if (s.side === 'wire') return 1;
+  if (s.k === 's.db') return d.dbMs || 2;
+  if (s.k === 's.auth') return d.sc === 'auth' ? 240 : 3;
+  return MS[s.k] || 2;
 }
 
 /* ============================================================
