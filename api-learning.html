@@ -1,0 +1,1471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>API Learning Sandbox — client / server / wire simulator</title>
+<style>
+:root{
+  --bg:#0c1017; --pane:#141a24; --pane2:#1a222e; --line:#26303d;
+  --tx:#d5deea; --dim:#7f8b9c; --client:#57c8ff; --server:#68e08c; --wire:#ffc861;
+  --hi:#ffb445; --hi-bg:rgba(255,180,69,.16); --accent:#4f8cff;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:grid;grid-template-rows:auto minmax(0,1fr) minmax(110px,25vh);gap:8px;padding:8px;overflow:hidden}
+.mono{font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;font-size:12.5px;line-height:1.6}
+button,select{font:inherit;color:var(--tx);background:var(--pane2);border:1px solid var(--line);border-radius:6px;
+  padding:5px 9px;cursor:pointer}
+button.on,select.on{background:#23384f;border-color:var(--accent);color:#fff}
+button:hover{border-color:#3c4b5e}
+h1{font-size:15px;margin:0;font-weight:650}
+h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
+
+/* ---------- top pane ---------- */
+#top{background:var(--pane);border:1px solid var(--line);border-radius:9px;padding:8px 11px;
+  display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:start}
+.pick{display:flex;gap:7px;align-items:center;margin-top:6px}
+.pick label{font-size:11px;color:var(--dim)}
+.pick select{min-width:21ch;text-align:left}
+#desc{margin:.35em 0 0;font-size:11.5px;color:var(--dim);line-height:1.45;max-width:130ch}
+#desc b{color:var(--tx);font-weight:600}
+#desc .api{color:var(--wire)}
+#runCol{display:flex;flex-direction:column;gap:7px;align-items:flex-end}
+#runRow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:end}
+#runBtn{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700;padding:7px 14px;font-size:14px}
+#runBtn.playing{background:#1f6f3a;border-color:#2f9c53}
+#stat{font-size:11.5px;color:var(--dim)}
+#chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11px;padding:3px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+.chip b{color:var(--tx)}
+.chip.warn{border-color:#8a6a1f;color:#e6c07a;background:rgba(255,180,69,.08)}
+
+/* ---------- middle row ---------- */
+#mid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;min-height:0}
+.pane{background:var(--pane);border:1px solid var(--line);border-radius:9px;display:flex;flex-direction:column;min-height:0}
+.pane>header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 10px;border-bottom:1px solid var(--line);
+  background:var(--pane2);border-radius:9px 9px 0 0}
+.pane>header .who{font-weight:700;font-size:13px}
+.pane.client>header .who{color:var(--client)}
+.pane.server>header .who{color:var(--server)}
+.pane>header .meta{font-size:11px;color:var(--dim)}
+.pane>header .meta b{color:var(--tx)}
+.pane>header #pos{margin-left:auto;font-size:11px;color:var(--wire)}
+.pane>header .sel{display:flex;gap:4px;align-items:center;font-size:11px;color:var(--dim)}
+.pane>header .sel span{font-size:11px;padding:3px 6px}
+#codeCli,#codeSrv{overflow:auto;padding:8px 10px;min-height:0;flex:1;position:relative}
+.hint{font-size:11px;color:var(--dim);margin:.4em 0 0}
+.ln{display:grid;grid-template-columns:2.6em 1fr;gap:0;white-space:pre}
+.ln>num{color:#4b5766;text-align:right;padding-right:.7em;border-right:1px solid transparent}
+.ln>src{white-space:pre;padding-left:.7em}
+.ln.cur{background:var(--hi-bg)}
+.ln.cur>num{color:var(--hi);border-right-color:var(--hi)}
+.pane.dimmed #codeCli,.pane.dimmed #codeSrv{opacity:.45;transition:opacity .25s}
+.tk-c{color:#6c7a8d;font-style:italic}
+.tk-s{color:#e8a06a}
+.tk-k{color:#c58ae6}
+.tk-n{color:#8ec7ff}
+.tk-a{color:#68e08c}
+.tk-p{color:#69d2c8}
+.tk-t{color:#8b98ac}
+
+/* ---------- bottom pane ---------- */
+#bot{background:var(--pane);border:1px solid var(--line);border-radius:9px;display:flex;flex-direction:column;min-height:0}
+#bot>header{padding:5px 10px}
+#bot>header{display:flex;gap:10px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--line);background:var(--pane2);border-radius:9px 9px 0 0}
+#bot>header .who{font-weight:700;font-size:13px}
+#bot>header .legend{margin-left:auto;display:flex;gap:10px;font-size:10.5px;color:var(--dim)}
+#bot>header .legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+#trace{flex:1;overflow:auto;padding:6px 10px;min-height:0;font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
+  font-size:11.5px;line-height:1.4}
+.row{display:grid;grid-template-columns:4.6em 5em 1fr;gap:.4em;animation:fade .3s;padding:.05em 0}
+.row .t{color:#4b5766;text-align:right}
+.row .b{font-weight:700;font-size:11px;letter-spacing:.02em}
+.row .m{white-space:pre-wrap}
+.row .m em{color:var(--dim);font-style:normal}
+.row.client .b{color:var(--client)} .row.wire .b{color:var(--wire)} .row.server .b{color:var(--server)}
+.row.cur .m{color:#fff}
+.row.cur .b{color:var(--hi)}
+.wireblk,.noteblk{margin:.05em 0 .2em 10.4em;padding:.2em .45em;border-left:2px solid var(--line);white-space:pre-wrap;font-size:11px}
+.wireblk{color:#c8b489;background:rgba(255,200,97,.06);border-left-color:#5d4b22}
+.noteblk{color:#93a2b6;background:rgba(80,140,255,.05);border-left-color:#2b3b52;font-style:italic}
+.noteblk.hide{display:none}
+@keyframes fade{from{opacity:0;transform:translateY(2px)}to{opacity:1}}
+@media (max-width:860px){#mid{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr)}body{grid-template-rows:auto minmax(0,1fr) minmax(130px,30vh)}#top{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <div>
+    <h1>API Learning Sandbox <small>watch one API call travel: client code → wire → server code → wire → client code</small></h1>
+    <div class="pick"><label for="exSel">Scenario</label><select id="exSel" title="pick a scenario"></select></div>
+    <p id="desc"></p>
+    <p class="hint">space = run &nbsp;·&nbsp; &#9663;&#9663; = step forward &nbsp;·&nbsp; &#9662;&#9662; = step back &nbsp;·&nbsp; Explanations toggles the italic notes &nbsp;·&nbsp; R = rebuild after changing any selector</p>
+  </div>
+  <div id="runCol">
+    <div id="runRow">
+      <button id="runBtn">&#9654; Run</button>
+      <button id="nextBtn" title="step forward">&#9663;&#9663;</button>
+      <button id="prevBtn" title="step back">&#9662;&#9662;</button>
+      <button id="resetBtn">Reset</button>
+      <button id="speedBtn" title="speed">Speed: normal</button>
+      <button id="noteBtn" title="explanations">Explanations: on</button>
+    </div>
+    <div id="stat"></div>
+    <div id="chips"></div>
+  </div>
+</div>
+
+<div id="mid">
+  <div class="pane client" id="paneCli">
+    <header>
+      <span class="who">CLIENT (you / the app)</span>
+      <span class="sel">Language: <span id="clLangBtns"></span></span>
+      <span class="meta">protocol: <b id="clProto">&ndash;</b> · lib: <b id="clLib">&ndash;</b></span>
+      <span id="pos"></span>
+    </header>
+    <div id="codeCli"></div>
+  </div>
+  <div class="pane server" id="paneSrv">
+    <header>
+      <span class="who">SERVER (the API provider)</span>
+      <span class="sel">API type: <span id="apiBtns"></span></span>
+      <span class="sel">Language: <span id="svLangBtns"></span></span>
+      <span class="meta">stack: <b id="svStack">&ndash;</b></span>
+    </header>
+    <div id="codeSrv"></div>
+  </div>
+</div>
+
+<div id="bot">
+  <header>
+    <span class="who">REQUEST / RESPONSE TRACE</span>
+    <span id="trStat"></span>
+    <span class="legend">
+      <span><i style="background:var(--client)"></i>client code</span>
+      <span><i style="background:var(--wire)"></i>wire / bytes</span>
+      <span><i style="background:var(--server)"></i>server code</span>
+    </span>
+  </header>
+  <div id="trace"></div>
+</div>
+
+<script>
+/* ============================================================
+   DATA: scenarios
+   ============================================================ */
+const HOST = 'api.acme.dev', BASE = 'https://' + HOST, TOK = 'pk_live_9f2a4c';
+
+const SCEN = [
+  { id:'search', title:'Library / package search', blurb:'GET a JSON list matching a query string: the classic "just call a URL" API.',
+    method:'GET', path:'/api/search', query:{q:'json parser', limit:5},
+    resp:{query:'json parser', count:3, results:[{name:'json-parser',downloads:1284900},{name:'jsonparser',downloads:210340},{name:'fast-json',downloads:53010}]},
+    ctype:'application/json', size:148, dbSql:"SELECT name, downloads FROM packages WHERE name ILIKE $1 ORDER BY downloads DESC LIMIT $2",
+    dbRows:3, dbMs:14, frames:3, api0:'rest',
+    gqlDoc:['query Search($q: String!, $limit: Int) {','  search(q: $q, limit: $limit) { count results { name downloads } }','}'],
+    gqlVars:{q:'json parser', limit:5},
+    grpc:{svc:'package.Index', rpc:'Search', type:'SearchRequest', rt:'SearchResponse', fields:{query:'json parser', limit:5}},
+    wsPath:'/ws/search', wsMsg:{op:'subscribe', channel:'search', q:'json parser'} },
+
+  { id:'auth', title:'Auth / token exchange', blurb:'POST credentials, get a bearer token back: the body is FORM-encoded, not JSON.',
+    method:'POST', path:'/oauth/token',
+    bodyWire:'grant_type=password&client_id=acme-web&client_secret=cs_live_7d31&username=ada%40example.com&password=hunter2',
+    reqCtype:'application/x-www-form-urlencoded',
+    resp:{access_token:'eyJhbGciOiRS256.eyJz7Q...c1f0', token_type:'Bearer', expires_in:3600, refresh_token:'rt_8ac1f0e2'},
+    ctype:'application/json', size:196, auth:false, dbSql:"SELECT pw_hash FROM users WHERE email = $1", dbRows:1, dbMs:240,
+    frames:1, api0:'rest',
+    gqlDoc:['mutation Token($clientId: String!, $user: String!, $password: String!) {','  issueToken(clientId: $clientId, user: $user, password: $password) { accessToken tokenType expires }','}'],
+    gqlVars:{clientId:'acme-web', user:'ada@example.com', password:'hunter2'},
+    grpc:{svc:'auth.Identity', rpc:'IssueToken', type:'TokenRequest', rt:'TokenResponse', fields:{clientId:'acme-web', grant:'PASSWORD', user:'ada@example.com', password:'hunter2'}},
+    wsPath:'/ws/token', wsMsg:{op:'token', clientId:'acme-web', user:'ada@example.com'},
+    srvNote:'bcrypt/argon2 compare costs ~240 ms — deliberately slow' },
+
+  { id:'weather', title:'Weather lookup (query params + cache)', blurb:'GET with lat/lon/units in the query string; the server answers from cache.',
+    method:'GET', path:'/v1/weather', query:{lat:52.53, lon:13.42, units:'metric'},
+    resp:{station:'BERLIN', observedAt:'2024-11-07T09:30:00Z', temperature:6.4, windKph:17.5, humidity:0.81, conditions:'overcast'},
+    ctype:'application/json', size:139, dbSql:null, dbRows:0, dbMs:2, cache:true, frames:1, api0:'rest',
+    gqlDoc:['query Weather($lat: Float!, $lon: Float!, $units: String) {','  weather(lat: $lat, lon: $lon, units: $units) { station temperature windKph conditions }','}'],
+    gqlVars:{lat:52.53, lon:13.42, units:'metric'},
+    grpc:{svc:'weather.Forecast', rpc:'Current', type:'WeatherRequest', rt:'WeatherResponse', fields:{lat:52.53, lon:13.42, units:'metric'}},
+    wsPath:'/ws/weather', wsMsg:{op:'watch', lat:52.53, lon:13.42} },
+
+  { id:'image', title:'Image download (byte stream)', blurb:'GET one binary resource: Content-Type + Content-Length carry the meaning, bytes stay opaque.',
+    kind:'bytes', method:'GET', path:'/assets/logo.png', query:null,
+    ctype:'image/png', size:41728, frames:1, api0:'rest',
+    srvNote:'sendfile(2): zero-copy from page cache to the socket',
+    gqlDoc:['query File($f: String!) {','  read(file: $f) { contentType bytes }','}'],
+    gqlVars:{f:'logo.png'},
+    grpc:{svc:'media.Files', rpc:'Get', type:'FileRequest', rt:'FileResponse', fields:{file:'logo.png'}},
+    wsPath:'/ws/files', wsMsg:{op:'get', file:'logo.png'} },
+
+  { id:'video', title:'Video download (chunked byte stream)', blurb:'3 MB body pushed in 8 chunks of 384 KiB; the client never holds the whole file.',
+    kind:'stream', method:'GET', path:'/stream/movie.mp4', query:null,
+    ctype:'application/octet-stream', chunks:8, chunkSize:393216, size:3145728, api0:'rest',
+    gqlDoc:['query Stream($f: String!) {','  download(file: $f) { bytes }','}'],
+    gqlVars:{f:'movie.mp4'},
+    grpc:{svc:'media.Files', rpc:'Download', type:'FileRequest', rt:'Chunk', stream:true, fields:{file:'movie.mp4'}},
+    wsPath:'/ws/files', wsMsg:{op:'download', file:'movie.mp4'} },
+
+  { id:'live', title:'Live feed (server push)', blurb:'One long-lived connection: the server keeps pushing updates as they arrive.',
+    kind:'frames', frames:6, frameBytes:148, method:'GET', path:'/ws/live', query:null,
+    ctype:'application/json', api0:'ws', sink:'stdout',
+    dbSql:"SELECT name, downloads FROM packages WHERE updated_at > now() - interval '1 h' ORDER BY downloads DESC LIMIT 6",
+    dbRows:6, dbMs:9,
+    gqlDoc:['query Live($channel: String!) {','  watch(channel: $channel) { name downloads }','}'],
+    gqlVars:{channel:'packages'},
+    grpc:{svc:'feed.Live', rpc:'Watch', type:'WatchRequest', rt:'Update', stream:true, fields:{channel:'packages', since:'2024-11-07T09:00:00Z'}},
+    wsPath:'/ws/live', wsMsg:{op:'subscribe', channel:'packages'} },
+];
+
+const API_NOTE = {
+  rest:'<b>REST</b> \u2014 one request/response per call; method, URL and status codes carry meaning.',
+  graphql:'<b>GraphQL</b> \u2014 one endpoint; the client writes the document, the server validates it and runs resolvers.',
+  grpc:'<b>gRPC</b> \u2014 protobuf messages over HTTP/2 frames: typed, binary, streamable.',
+  ws:'<b>WebSocket</b> \u2014 one upgrade, then framed messages on an open socket: no status codes.',
+};
+const API_NAME = { rest:'REST', graphql:'GraphQL', grpc:'gRPC', ws:'WebSocket' };
+const LANGS = {
+  python:{ name:'Python',        clib:'requests / grpcio / websockets', sstk:'FastAPI + uvicorn' },
+  js:    { name:'JavaScript (Node)', clib:'fetch / grpc-js / ws',        sstk:'Express / ws / graphql-js' },
+  java:  { name:'Java',          clib:'java.net.http + grpc',            sstk:'Spring Web / spring-graphql-ai' },
+  csharp:{ name:'C#',            clib:'HttpClient / grpc-dotnet',        sstk:'ASP.NET Core' },
+};
+
+/* ============================================================
+   helpers: literal rendering per language
+   ============================================================ */
+const esc = s => String(s);
+const pyLit = v => typeof v === 'string' ? '"'+v+'"' : v === true ? 'True' : v === false ? 'False' : v === null ? 'None' : String(v);
+const pyObj = o => '{' + Object.entries(o).map(([k,v]) => '"'+k+'": '+pyLit(v)).join(', ') + '}';
+const jsLit = v => typeof v === 'string' ? '"'+v+'"' : String(v);
+const jsObj = o => '{' + Object.entries(o).map(([k,v]) => k+': '+jsLit(v)).join(', ') + '}';
+const jLit  = v => typeof v === 'string' ? '"'+v+'"' : String(v);
+const jObj  = (T,o) => 'new ' + T + '(' + Object.values(o).map(jLit).join(', ') + ')';
+const cLit  = v => typeof v === 'string' ? '"'+v+'"' : String(v);
+const cObj  = (T,o) => 'new ' + T + ' { ' + Object.entries(o).map(([k,v]) => cap(k)+' = '+cLit(v)).join(', ') + ' }';
+const cap = s => s[0].toUpperCase() + s.slice(1);
+const lc = s => s[0].toLowerCase() + s.slice(1);
+const rowsN = n => n + (n === 1 ? ' row' : ' rows');
+const qsOf = q => Object.entries(q).map(([k,v]) => encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&');
+const bytesOf = n => n >= 1048576 ? +((n/1048576).toFixed(2)) + ' MiB' : n >= 1024 ? +((n/1024).toFixed(1)) + ' KiB' : n + ' B';
+const jsonWire = o => JSON.stringify(o);
+const utf8 = s => new TextEncoder().encode(s).length;
+
+function L(k, t){ return { k, t }; }
+function C(t){ return { k:null, t }; }
+
+/* ============================================================
+   resolve(scenario, api) -> request/response descriptor
+   ============================================================ */
+function resolve(sc, api){
+  const d = { api, sc:sc.id, scenario:sc, host:HOST, base:BASE, wsPath:sc.wsPath||'/ws/live' };
+  d.kind = sc.kind || 'json';
+  d.nodb = !sc.dbSql && (d.kind === 'bytes' || d.kind === 'stream');
+  d.sink = sc.sink || 'file';
+  d.eff  = api === 'ws' ? 'frames' : (d.kind === 'frames' ? 'stream' : d.kind);
+  d.count = api === 'ws' ? (d.kind === 'stream' ? sc.chunks : (d.kind === 'frames' ? sc.frames : (sc.id === 'search' ? 3 : 1)))
+          : (d.kind === 'stream' ? sc.chunks : (d.kind === 'frames' ? sc.frames : 1));
+  d.bin   = d.kind === 'bytes' || d.kind === 'stream';
+  d.status = sc.status || 200;
+  d.ctype = sc.ctype;
+  d.size  = sc.size || null;
+  d.chunkSize = sc.chunkSize || 0;
+  d.dbSql = sc.dbSql || null; d.dbRows = sc.dbRows || 0; d.dbMs = sc.dbMs || 0;
+  d.cache = !!sc.cache; d.auth = sc.auth !== false; d.srvNote = sc.srvNote || null;
+  d.resp  = sc.resp || null;
+  d.respWire = d.resp ? jsonWire(d.resp) : (d.kind === 'bytes' ? '<'+bytesOf(sc.size)+' image/png>' : '<stream>');
+  // the exact bytes the server will put in the body, so content-length can never
+  // disagree with the body the trace prints
+  d.respBody = d.resp ? (api === 'graphql' ? '{"data":' + jsonWire(d.resp) + '}' : jsonWire(d.resp)) : null;
+  if (d.respBody) d.size = utf8(d.respBody);
+  if (d.kind === 'frames'){ d.chunkSize = sc.frameBytes || 148; d.size = (sc.frames || 6) * (sc.frameBytes || 148); }
+
+  if (api === 'rest'){
+    d.method = sc.method;
+    d.path = sc.path;
+    d.qs = sc.query ? qsOf(sc.query) : '';
+    d.url = sc.path + (d.qs ? '?' + d.qs : '');
+    d.bodyWire = sc.bodyWire || null;
+    d.bodyBytes = d.bodyWire ? utf8(d.bodyWire) : 0;
+    d.ctypeReq = sc.reqCtype || 'application/json';
+    d.qsPy = pyObj(sc.query || {});
+    d.qsJs = jsObj(sc.query || {});
+    d.qsJava = sc.javaLit || (sc.query ? Object.values(sc.query).map(jLit).join(', ') : '');
+    d.qsC = sc.cLit || (sc.query ? Object.values(sc.query).map(cLit).join(', ') : '');
+  }
+  if (api === 'graphql'){
+    d.method = 'POST'; d.path = '/graphql'; d.url = '/graphql';
+    d.doc = sc.gqlDoc; d.vars = sc.gqlVars;
+    d.gqlArgs = Object.keys(sc.gqlVars);
+    d.gqlJavaArgs = Object.entries(sc.gqlVars).map(([k,v]) => (typeof v === 'number' ? 'int' : 'String') + ' ' + cap(k)).join(', ');
+    d.gqlCArgs = Object.entries(sc.gqlVars).map(([k,v]) => (typeof v === 'number' ? 'int' : 'string') + ' ' + k).join(', ');
+    d.gqlMapJava = Object.entries(sc.gqlVars).map(([k,v]) => '"' + k + '", ' + jLit(v)).join(', ');
+    d.gqlMapC = Object.entries(sc.gqlVars).map(([k,v]) => '["' + k + '"] = ' + cLit(v)).join(', ');
+    d.docPy = '"""' + sc.gqlDoc.join('\n') + '"""';
+    d.docJs = '"""\n' + sc.gqlDoc.join('\n') + '\n"""';
+    d.docJava = '"' + sc.gqlDoc.join(' ") +\n    (') + '"';
+    d.docC = '"""\n' + sc.gqlDoc.join('\n') + '\n"';
+    d.varsPy = pyObj(sc.gqlVars); d.varsJs = jsObj(sc.gqlVars);
+    d.bodyWire = jsonWire({ query: sc.gqlDoc.join(' '), variables: sc.gqlVars });
+    d.bodyBytes = utf8(d.bodyWire); d.ctypeReq = 'application/json';
+  }
+  if (api === 'grpc'){
+    d.svc = sc.grpc.svc; d.rpc = sc.grpc.rpc; d.type = sc.grpc.type; d.rt = sc.grpc.rt;
+    d.fields = sc.grpc.fields; d.streamRpc = !!sc.grpc.stream;
+    d.path = '/' + sc.grpc.svc + '/' + sc.grpc.rpc;
+    d.method = 'POST';
+    d.bodyBytes = 34 + (d.kind === 'bytes' ? sc.size : 0);
+    d.fieldsPy = pyObj(sc.grpc.fields); d.fieldsJs = jsObj(sc.grpc.fields);
+    d.fieldsJava = Object.values(sc.grpc.fields).map(jLit).join(', ');
+    d.fieldsC = Object.entries(sc.grpc.fields).map(([k,v]) => cap(k)+' = '+cLit(v)).join(', ');
+  }
+  d.gqlField = ((sc.gqlDoc[1] || '').trim().match(/[A-Za-z_][A-Za-z0-9_]*/) || ['field'])[0];
+  d.gqlCap = cap(d.gqlField);
+  d.bytesLabel = (d.bodyWire ? bytesOf(d.bodyWire.length) + ' body' : api === 'graphql' ? bytesOf(JSON.stringify({ query: d.doc.join(' '), variables: d.vars })) + ' body' : 'no request body');
+  if (api === 'ws'){
+    d.wsUrl = 'wss://' + HOST + d.wsPath;
+    d.msg = sc.wsMsg; d.msgPy = pyObj(sc.wsMsg); d.msgJs = jsObj(sc.wsMsg);
+    d.msgJava = JSON.stringify(sc.wsMsg).replace(/"/g, '\\"');
+    d.msgC = JSON.stringify(sc.wsMsg).replace(/"/g, '\\\"');
+    d.path = d.wsPath; d.method = 'GET';
+  }
+  return d;
+}
+
+/* frame / chunk payloads used in the trace */
+/* Hex dumps below are the real first 16 bytes of lab/fixtures/logo.png
+   (sha256 36507d9c480dcbae) and of each 393216-byte read of lab/fixtures/movie.mp4
+   (sha256 0f0b3ed345fc1b06). lab/verify.mjs re-reads those files and fails if these
+   strings drift, so the trace shows bytes a packet capture would show. */
+const HEX_PNG = '89 50 4e 47  0d 0a 1a 0a  00 00 00 0d  49 48 44 52';
+const HEX_MP4 = ['00 00 00 1c  66 74 79 70  69 73 6f 6d  00 00 02 00', 'e0 ba f4 d4  64 c0 0a 95  4f 8a 89 99  4d 37 b7 9a', '53 52 29 fc  39 ec 55 be  1f ce 8c 7f  21 e9 e1 94', 'f2 a5 0d 6c  62 d6 e7 99  4d 99 03 d1  81 6b 81 22', 'd7 1d d3 33  c9 95 36 b3  b2 10 0e 66  1e f2 96 0b', '58 52 44 7f  d2 95 4e cf  b6 9a d1 0d  62 00 83 f7', '8c 59 49 03  ea e8 2c 49  cd ba 76 be  f7 3d 13 8d', 'c0 e0 7b 56  aa 02 ab 84  8b 5b 38 21  5f 98 93 41'];
+
+function payloadText(d, i){
+  if (d.kind === 'stream'){
+    const off = i * d.chunkSize;
+    return 'chunk ' + (i+1) + '/' + d.count + '  ' + d.chunkSize + ' bytes @' + off +
+      '   ' + (HEX_MP4[i % HEX_MP4.length] || '');
+  }
+  if (d.kind === 'bytes') return HEX_PNG + '  ... ' + bytesOf(d.size) + ' total';
+  if (d.kind === 'frames') return '{"channel":"packages","event":"update","name":"json-parser","downloads":' + (1284900 + i*37) + '}';
+  if (d.sc === 'search') return '{"name":"json' + ['', '-parser', 'parser', '-fast'][i % 4] + '","downloads":' + (1284900 - i*1000) + '}';
+  if (d.sc === 'auth') return '{"access_token":"eyJhbGciOiRS256...","token_type":"Bearer","expires_in":3600}';
+  return jsonWire(SCEN[2].resp);
+}
+
+/* ============================================================
+   CLIENT code generators
+   ============================================================ */
+function clPython(d){
+  const A = d.api, K = d.eff, o = [];
+  if (A === 'ws'){
+    o.push(C('import asyncio, json, websockets'), C(''),
+      L('c.setup', 'URI = "wss://' + d.host + d.wsPath + '"'),
+      L('c.setup', 'async def consume():'),
+      L('c.upgrade', '    async with websockets.connect(URI) as ws:   # GET + Upgrade: websocket'));
+    if (d.auth) o.push(L('c.headers', '        # websockets.connect(URI, subprotocols=["bearer ' + TOK + '"])  # the token rides the handshake'));
+    o.push(L('c.body', '    msg = ' + d.msgPy),
+      L('c.sendFrame', '    await ws.send(json.dumps(msg))   # masked TEXT frame'));
+    if (K === 'stream') o.push(L('c.fileOpen', '    f = open("movie.mp4", "wb")'),
+      L('c.readChunk', '    async for frame in ws:                    # binary frames, ' + d.count + ' of them'),
+      L('c.write', '        f.write(frame)'));
+    else if (K === 'frames') o.push(L('c.readChunk', '    async for raw in ws:'), L('c.decode', '        print(json.loads(raw))'));
+    else o.push(L('c.readChunk', '    raw = await ws.recv()'), L('c.decode', '    print(json.loads(raw))'));
+    o.push(L('c.close', '    await ws.close()'));
+    return o;
+  }
+  const lib = A === 'grpc' ? 'grpc' : 'requests';
+  if (A === 'grpc'){
+    const pn = d.svc.split('.')[0];
+    o.push(C('import grpc'), C('import ' + pn + '_pb2 as pb, ' + pn + '_pb2_grpc as pbg'), C(''),
+      L('c.setup', 'channel = grpc.insecure_channel("localhost:8080")'),
+      L('c.setup', 'stub = pbg.' + cap(pn) + 'Stub(channel)  # one HTTP/2 socket, multiplexed'));
+    if (d.auth) o.push(L('c.headers', 'creds = (("authorization", "Bearer ' + TOK + '"),)'));
+    o.push(L('c.body', 'req = pb.' + d.type + '(' + Object.entries(d.fields).map(([k,v]) => k + '=' + pyLit(v)).join(', ') + ')'));
+    if (K === 'stream') o.push(
+      L('c.fileOpen', 'f = open("movie.mp4", "wb")'),
+      L('c.readChunk', 'for chunk in stub.' + d.rpc + '(req, timeout=30):   # server streaming, ' + d.count + ' messages'),
+      L('c.write', '    f.write(chunk.bytes)'));
+    else {
+      o.push(L('c.send', 'resp = stub.' + d.rpc + '(req, timeout=5' + (d.auth ? ', credentials=creds' : '') + ')'));
+      if (K === 'bytes') o.push(L('c.fileOpen', 'f = open("logo.png", "wb")'), L('c.decode', 'print(resp.content_type, len(resp.payload))'), L('c.write', 'f.write(resp.payload)'));
+      else o.push(L('c.recvHeaders', 'print(resp.code if False else "grpc-status: 0")'), L('c.decode', 'print(resp.count, [r.name for r in resp.results])'));
+    }
+    o.push(L('c.close', 'channel.close()'));
+    return o;
+  }
+  o.push(C('import requests'), C(''), L('c.setup', 'BASE = "https://' + d.host + '"'),
+    L('c.setup', 'session = requests.Session()   # one socket, kept alive for later calls'));
+  if (d.auth) o.push(L('c.headers', 'session.headers["Authorization"] = "Bearer ' + TOK + '"'));
+  if (A === 'graphql'){
+    o.push(L('c.body', 'QUERY = ' + d.docPy), L('c.body', 'VARS  = ' + d.varsPy),
+      L('c.send', 'resp = session.post(BASE + "/graphql", json={"query": QUERY, "variables": VARS})'));
+  } else {
+    if (d.method === 'POST'){
+      o.push(L('c.body', 'body = "' + d.bodyWire + '"   # form-encoded, not JSON'),
+        L('c.send', 'resp = session.post(BASE + "' + d.path + '", data=body, headers={"Content-Type": "' + d.ctypeReq + '"})'));
+    } else {
+      if (d.scenario.query) o.push(L('c.body', 'params = ' + d.qsPy));
+      o.push(L('c.send', 'resp = session.get(BASE + "' + d.url + '"' + (d.scenario.query ? ', params=params' : '') + ')'));
+    }
+  }
+  o.push(L('c.recvHeaders', 'print(resp.status_code, resp.headers["Content-Type"])'));
+  if (K === 'stream'){
+    o.push(L('c.fileOpen', 'f = open("movie.mp4", "wb")'),
+      L('c.readChunk', 'for chunk in resp.iter_content(' + d.chunkSize + '):   # ' + d.count + ' chunks'),
+      L('c.write', '    f.write(chunk)'));
+  } else if (K === 'bytes'){
+    o.push(L('c.decode', 'img = resp.content   # ' + d.size + ' bytes, image/png'),
+      L('c.fileOpen', 'f = open("logo.png", "wb")'), L('c.write', 'f.write(img)'));
+  } else {
+    o.push(L('c.decode', 'data = resp.json()'), L('c.use', 'print(data)'));
+  }
+  o.push(L('c.close', 'session.close()  # keep-alive: socket can stay open'));
+  return o;
+}
+
+function clJs(d){
+  const A = d.api, K = d.eff, o = [];
+  if (A === 'ws'){
+    if (K === 'stream') o.push(C('import { WebSocket } from "ws";'), C('import fs from "fs";'));
+    else o.push(C('import { WebSocket } from "ws";'));
+    o.push(C(''),
+      L('c.setup', 'const ws = new WebSocket("wss://' + d.host + d.wsPath + '"' + (d.auth ? ', ["bearer ' + TOK + '"]' : '') + ');'),
+      L('c.body', 'const op = ' + d.msgJs),
+      L('c.sendFrame', 'ws.on("open", () => ws.send(JSON.stringify(op)));'));
+    if (K === 'stream') o.push(L('c.fileOpen', 'const file = fs.createWriteStream("movie.mp4");'),
+      L('c.readChunk', 'ws.on("message", (frame) => {   // ' + d.count + ' binary frames'),
+      L('c.write', '  file.write(frame);'), L('c.close', '});'));
+    else if (K === 'frames') o.push(L('c.readChunk', 'ws.on("message", (raw) => {   // ' + d.count + ' text frames'),
+      L('c.decode', '  console.log(JSON.parse(raw));'), L('c.close', '});'));
+    else o.push(L('c.readChunk', 'ws.on("message", (raw) => {'), L('c.decode', '  console.log(JSON.parse(raw));'), L('c.close', '});'));
+    o.push(L('c.close', 'ws.on("close", (code) => console.log("socket closed", code));'));
+    return o;
+  }
+  if (A === 'grpc'){
+    o.push(C('const grpc = require("@grpc/grpc-js");'), C('const pb = grpc.loadSync("' + d.svc.replace('.', '/') + '.proto");'), C(''),
+      L('c.setup', 'const client = new pb.' + cap(d.svc.split('.')[0]) + '("localhost:8080", grpc.credentials.createInsecure());'),
+      L('c.body', 'const req = new pb.' + d.type + '(' + d.fieldsJs + ');'));
+    if (K === 'stream'){
+      o.push(L('c.fileOpen', 'const file = fs.createWriteStream("movie.mp4");'),
+        L('c.readChunk', 'for await (const chunk of client.' + d.rpc + '(req)) {   // server streaming, ' + d.count + ' messages'),
+        L('c.write', '  file.write(chunk.bytes);'), L('c.close', '}'));
+    } else if (K === 'bytes'){
+      o.push(L('c.send', 'const resp = await client.' + d.rpc + '(req);'),
+        L('c.decode', 'console.log(resp.contentType, resp.payload.length);'),
+        L('c.fileOpen', 'fs.writeFileSync("logo.png", resp.payload);'));
+    } else {
+      o.push(L('c.send', 'const resp = await client.' + d.rpc + '(req);'),
+        L('c.recvHeaders', 'console.log("grpc-status", metadata.get("grpc-status"));'),
+        L('c.decode', 'console.log(resp.count, resp.results.map(r => r.name));'));
+    }
+    o.push(L('c.close', 'client.close();'));
+    return o;
+  }
+  o.push(d.bin ? C('import fs from "fs";   // streaming needs a sink: a file here, a decoder in a browser') : C(''),
+    C('const BASE = "https://' + d.host + '";'), C(''), L('c.setup', 'const headers = { Accept: "' + d.ctype + '"' + (d.auth ? ', Authorization: "Bearer ' + TOK + '"' : '') + ' };'));
+  if (A === 'graphql'){
+    o.push(L('c.body', 'const QUERY = ' + d.docJs), L('c.body', 'const VARS  = ' + d.varsJs),
+      L('c.send', 'const res = await fetch(BASE + "/graphql", { method: "POST", headers: { ...headers, "Content-Type": "application/json" },'),
+      L('c.body', '  body: JSON.stringify({ query: QUERY, variables: VARS }) });'));
+  } else if (d.method === 'POST'){
+    o.push(L('c.body', 'const body = "' + d.bodyWire + '";   // application/x-www-form-urlencoded'),
+      L('c.send', 'const res = await fetch(BASE + "' + d.path + '", { method: "POST", headers: { ...headers, "Content-Type": "' + d.ctypeReq + '" }, body });'));
+  } else {
+    o.push(L('c.send', 'const res = await fetch(BASE + "' + d.url + '", { headers });'));
+  }
+  o.push(L('c.recvHeaders', 'console.log(res.status, res.headers.get("content-type"));'));
+  if (K === 'stream'){
+    o.push(L('c.fileOpen', 'const file = fs.createWriteStream("movie.mp4");'),
+      L('c.readChunk', 'for await (const chunk of res.body) {   // ' + d.count + ' chunks of ' + d.chunkSize),
+      L('c.write', '  file.write(chunk);'), L('c.close', '}'));
+  } else if (K === 'bytes'){
+    o.push(L('c.decode', 'const buf = Buffer.from(await res.arrayBuffer());   // ' + d.size + ' bytes'),
+      L('c.fileOpen', 'fs.writeFileSync("logo.png", buf);'));
+  } else {
+    o.push(L('c.decode', 'const data = await res.json();'), L('c.use', 'console.log(data);'));
+  }
+  return o;
+}
+
+function clJava(d){
+  const A = d.api, K = d.eff, o = [];
+  o.push(C('import com.acme.' + (d.api === 'grpc' ? 'grpc.*' : d.api === 'graphql' ? 'graphql.*' : 'Json') + ';'), C(''), L('c.setup', 'var client = HttpClient.create();  // pools one socket per host'));
+  if (A === 'grpc'){
+    o.push(L('c.setup', 'var channel = GrpcChannel.create("localhost:8080");'),
+      L('c.setup', 'var stub = new ' + cap(d.svc.split('.')[0]) + 'Stub(channel);'),
+      L('c.body', 'var req = ' + jObj(d.type, d.fields) + ';'));
+    if (K === 'stream'){
+      o.push(L('c.fileOpen', 'var file = FileHandle.create("movie.mp4");'),
+        L('c.readChunk', 'for (var chunk : stub.' + lc(d.rpc) + '(req)) {   // server streaming, ' + d.count + ' messages'),
+        L('c.write', '  file.write(chunk.bytes());'), L('c.close', '}'));
+    } else if (K === 'bytes'){
+      o.push(L('c.send', 'var resp = stub.' + lc(d.rpc) + '(req);'),
+        L('c.decode', 'System.out.println(resp.contentType() + " " + resp.payload().size());'),
+        L('c.fileOpen', 'FileHandle.create("logo.png").write(resp.payload());'));
+    } else {
+      o.push(L('c.send', 'var resp = stub.' + lc(d.rpc) + '(req);'),
+        L('c.recvHeaders', 'System.out.println(stub.status());'),
+        L('c.decode', 'System.out.println(resp.count() + " " + resp.results());'));
+    }
+    o.push(L('c.close', 'channel.close();'));
+    return o;
+  }
+  if (A === 'ws'){
+    o.push(L('c.setup', 'var ws = WebSocket.connect("wss://' + d.host + d.wsPath + '");'),
+      L('c.body', 'var op = "{\\"op\\":\\"' + Object.keys(d.msg)[0] + '\\",...}";'),
+      L('c.sendFrame', 'ws.sendText("' + d.msgJava + '");'));
+    if (K === 'stream') o.push(L('c.fileOpen', 'var file = FileHandle.create("movie.mp4");'),
+      L('c.readChunk', 'for (var frame : ws.binaryFrames()) {   // ' + d.count + ' frames'),
+      L('c.write', '  file.write(frame);'), L('c.close', '}'));
+    else if (K === 'frames') o.push(L('c.readChunk', 'for (var raw : ws.messages()) {   // ' + d.count + ' text frames'),
+      L('c.decode', '  System.out.println(Json.read(raw));'), L('c.close', '}'));
+    else o.push(L('c.readChunk', 'var raw = ws.receive();'), L('c.decode', 'System.out.println(Json.read(raw));'));
+    o.push(L('c.close', 'ws.close();'));
+    return o;
+  }
+  if (A === 'graphql'){
+    o.push(L('c.body', 'var doc = "' + d.scenario.gqlDoc.join(' ') + '";'),
+      L('c.body', 'var vars = Map.of(' + d.gqlMapJava + ');'),
+      L('c.body', 'var req = HttpRequest.create("https://' + d.host + '/graphql")'),
+      L('c.body', '    .POST(Json.write("{query: doc, variables: " + Json.write(vars) + "}"))'),
+      L('c.body', '    .contentType("application/json");'));
+  } else if (d.method === 'POST'){
+    o.push(L('c.body', 'var body = "' + d.bodyWire + '";'),
+      L('c.body', 'var req = HttpRequest.create("https://' + d.host + d.path + '").POST(body).contentType("' + d.ctypeReq + '");'));
+  } else {
+    o.push(L('c.body', 'var uri = "https://' + d.host + d.url + '";'),
+      L('c.body', 'var req = HttpRequest.GET(uri);'));
+  }
+  if (d.auth) o.push(L('c.headers', 'req = req.header("Authorization", "Bearer ' + TOK + '");'));
+  if (K === 'stream'){
+    o.push(L('c.send', 'var resp = client.send(req, HttpResponse.BodyHandlers.iterables());'),
+      L('c.recvHeaders', 'System.out.println(resp.statusCode() + " " + resp.header("content-type"));'),
+      L('c.fileOpen', 'var file = FileHandle.create("movie.mp4");'),
+      L('c.readChunk', 'for (var chunk : resp.bodyIterable()) {   // ' + d.count + ' chunks'),
+      L('c.write', '  file.write(chunk);'), L('c.close', '}'));
+  } else if (K === 'bytes'){
+    o.push(L('c.send', 'var resp = client.send(req, HttpResponse.BodyHandlers.toBytes());'),
+      L('c.recvHeaders', 'System.out.println(resp.statusCode() + " " + resp.header("content-type"));'),
+      L('c.decode', 'var bytes = resp.body();   // ' + d.size + ' bytes'),
+      L('c.fileOpen', 'FileHandle.create("logo.png").write(bytes);'));
+  } else {
+    o.push(L('c.send', 'var resp = client.send(req, HttpResponse.BodyHandlers.to(String.class));'),
+      L('c.recvHeaders', 'System.out.println(resp.statusCode() + " " + resp.header("content-type"));'),
+      L('c.decode', 'var data = Json.read(resp.body());'),
+      L('c.use', 'System.out.println(data);'));
+  }
+  return o;
+}
+
+function clCSharp(d){
+  const A = d.api, K = d.eff, o = [];
+  if (A === 'grpc'){
+    o.push(C('using Grpc.Net.Client;'), C(''),
+      L('c.setup', 'var channel = InsecureChannel.Create("localhost:8080");'),
+      L('c.setup', 'var client = new ' + cap(d.svc.split('.')[0]) + 'Client(channel);'),
+      L('c.body', 'var req = ' + cObj(d.type, d.fields) + ';'));
+    if (K === 'stream'){
+      o.push(L('c.fileOpen', 'var file = File.Create("movie.mp4");'),
+        L('c.readChunk', 'foreach (var chunk in client.' + d.rpc + 'Async(req).GetResponseStream()) {   // ' + d.count + ' messages'),
+        L('c.write', '  file.Write(chunk.Bytes);'), L('c.close', '}'));
+    } else if (K === 'bytes'){
+      o.push(L('c.send', 'var resp = client.' + d.rpc + 'Async(req).GetResponseAsync();'),
+        L('c.decode', 'Console.WriteLine(resp.ContentType + " " + resp.Payload.Length);'),
+        L('c.fileOpen', 'File.WriteAllBytes("logo.png", resp.Payload);'));
+    } else {
+      o.push(L('c.send', 'var resp = await client.' + d.rpc + 'Async(req).ResponseAsync;'),
+        L('c.recvHeaders', 'Console.WriteLine(client.TrailingStatus() == 0);'),
+        L('c.decode', 'Console.WriteLine(resp.Count + " " + resp.Results);'));
+    }
+    o.push(L('c.close', 'channel.Dispose();'));
+    return o;
+  }
+  if (A === 'ws'){
+    o.push(L('c.setup', 'var ws = await WebSocket.ConnectAsync("wss://' + d.host + d.wsPath + '"' + (d.auth ? ', new[] { "bearer ' + TOK + '" }' : '') + ');'),
+      L('c.body', 'var op = "' + d.msgC + '";'),
+      L('c.sendFrame', 'await ws.SendAsync(op);'));
+    if (K === 'stream') o.push(L('c.fileOpen', 'var file = File.Create("movie.mp4");'),
+      L('c.readChunk', 'await foreach (var frame in ws.BinaryFrames()) {   // ' + d.count + ' frames'),
+      L('c.write', '  file.Write(frame);'), L('c.close', '}'));
+    else if (K === 'frames') o.push(L('c.readChunk', 'await foreach (var raw in ws.Messages()) {   // ' + d.count + ' text frames'),
+      L('c.decode', '  Console.WriteLine(Json.Parse(raw));'), L('c.close', '}'));
+    else o.push(L('c.readChunk', 'var raw = await ws.ReceiveAsync();'), L('c.decode', 'Console.WriteLine(Json.Parse(raw));'));
+    o.push(L('c.close', 'await ws.CloseAsync();'));
+    return o;
+  }
+  o.push(C('using System.Net.Http;'), C(''), L('c.setup', 'var http = new HttpClient();   // keep-alive pool'));
+  if (A === 'graphql'){
+    o.push(L('c.body', 'var doc = "' + d.scenario.gqlDoc[0] + ' ' + d.scenario.gqlDoc[1] + ' ' + d.scenario.gqlDoc[2] + '";'),
+      L('c.body', 'var vars = new Dictionary<string, object> { ' + d.gqlMapC + ' };'),
+      L('c.body', 'var req = new HttpRequestMessage(HttpMethod.Post, "https://' + d.host + '/graphql");'),
+      L('c.body', 'req.Content = Json.Write(new { query = doc, variables = vars });'));
+  } else if (d.method === 'POST'){
+    o.push(L('c.body', 'var req = new HttpRequestMessage(HttpMethod.Post, "https://' + d.host + d.path + '");'),
+      L('c.body', 'req.Content = Form.Parse("' + d.bodyWire + '");   // not JSON'),
+      L('c.body', 'req.Headers["Content-Type"] = "' + d.ctypeReq + '";'));
+  } else {
+    o.push(L('c.body', 'var req = new HttpRequestMessage(HttpMethod.' + d.method + ', "https://' + d.host + d.url + '");'));
+  }
+  if (d.auth) o.push(L('c.headers', 'req.Headers["Authorization"] = "Bearer ' + TOK + '";'));
+  o.push(L('c.send', 'var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);'),
+    L('c.recvHeaders', 'Console.WriteLine(resp.StatusCode + " " + resp.Headers["content-type"]);'));
+  if (K === 'stream'){
+    o.push(L('c.fileOpen', 'var file = File.Create("movie.mp4"); var buf = new Buffer(' + d.chunkSize + ');'),
+      L('c.readChunk', 'while (await resp.Content.ReadAsStreamAsync().ReadAsync(buf) > 0) {   // ' + d.count + ' chunks'),
+      L('c.write', '  file.Write(buf);'), L('c.close', '}'));
+  } else if (K === 'bytes'){
+    o.push(L('c.decode', 'var bytes = await resp.Content.ReadAsByteArrayAsync();   // ' + d.size + ' bytes'),
+      L('c.fileOpen', 'File.WriteAllBytes("logo.png", bytes);'));
+  } else {
+    o.push(L('c.decode', 'var data = await resp.Content.ReadAsJsonAsync();'), L('c.use', 'Console.WriteLine(data);'));
+  }
+  return o;
+}
+
+const CLIENT = { python:clPython, js:clJs, java:clJava, csharp:clCSharp };
+
+/* ============================================================
+   SERVER code generators
+   ============================================================ */
+function svPython(d){
+  const A = d.api, K = d.eff, o = [];
+  if (A === 'ws'){
+    o.push(C('from fastapi import FastAPI, WebSocket'), C(''), L('s.setup', 'app = FastAPI()'),
+      L('s.route', '@app.websocket("' + d.wsPath + '")'),
+      L('s.route', 'async def feed(ws: WebSocket):'),
+      L('s.accept', '    await ws.accept()   # 101 Upgrade, then this handler owns the socket'),
+      L('s.receiveFrame', '    op = json.loads(await ws.receive_text())'),
+      L('s.parse', '    channel = op["channel"]   # payload decoded, no status codes here'),
+      d.auth ? L('s.auth', '    principal = verify(ws.subprotocol)') : C('    # no bearer token on this handshake: the feed is public'),
+      d.dbSql ? L('s.db', '    rows = db.fetch(DB)  # ' + d.dbMs + ' ms, ' + rowsN(d.dbRows)) : L('s.db', '    rows = cache.get(key)  # cache hit, ' + d.dbMs + ' ms'),
+      L('s.serialize', '    payload = [{"channel": channel, "name": r["name"], "downloads": r["downloads"]} for r in rows]'),
+      L('s.writeChunk', '    for p in payload: await ws.send_text(json.dumps(p))   # ' + d.count + ' TEXT frames'),
+      L('s.close', '    await ws.close()'));
+    return o;
+  }
+  if (A === 'grpc'){
+    o.push(C('import grpc'), C('from grpc import aio'), C('import ' + d.svc.split('.')[0] + '_pb2 as pb, ' + d.svc.split('.')[0] + '_pb2_grpc as pbg'), C(''),
+      L('s.setup', 'class Servicer(pbg.' + cap(d.svc.split('.')[0]) + 'RpcServicer):'),
+      L('s.route', '    def ' + d.rpc + '(self, request, context):'),
+      L('s.parse', '        # HTTP/2 HEADERS + DATA frame -> 5-byte length prefix -> ' + d.type),
+      d.auth ? L('s.auth', '        verify(context.invocation_metadata())') : C('        # metadata carries the bearer token'),
+      d.dbSql ? L('s.db', '        rows = db.fetch(DB, request.' + Object.keys(d.fields)[0] + ', request.' + (Object.keys(d.fields)[1] || 'limit') + ')  # ' + d.dbMs + ' ms')
+              : L('s.db', '        rows = cache.get(request.' + Object.keys(d.fields)[0] + ')  # cache hit, ' + d.dbMs + ' ms'));
+    if (K === 'stream'){
+      o.push(L('s.serialize', '        def gen():'),
+        L('s.writeChunk', '            for row in rows: yield pb.' + d.rt + '(bytes=read_block(' + d.chunkSize + '))   # ' + d.count + ' messages'),
+        L('s.close', '        return gen()'));
+    } else if (K === 'bytes'){
+      o.push(L('s.serialize', '        payload = open("logo.png", "rb").read()'),
+        L('s.body', '        return pb.' + d.rt + '(content_type="image/png", payload=payload)'),
+        L('s.close', '        # protobuf serialised into one DATA frame, then trailers grpc-status: 0'));
+    } else {
+      o.push(L('s.serialize', '        payload = pb.' + d.rt + '(count=len(rows), results=rows)'),
+        L('s.body', '        return payload'),
+        L('s.close', '        # grpc-status: 0 goes in HTTP/2 TRAILERS'));
+    }
+    o.push(C(''), L('s.setup', 'server = aio.server()'),
+      L('s.setup', 'pbg.' + cap(d.svc.split('.')[0]) + 'Rpc.add_to_port(server.add_insecure_port("[::]:8080"), Servicer())'));
+    return o;
+  }
+  const imp = A === 'graphql' ? 'from graphql import parse, validate, execute, build_schema' : 'from fastapi import FastAPI, Header, Query, Body, FileResponse, StreamingResponse, JSONResponse';
+  o.push(C(imp), C(''), L('s.setup', 'app = FastAPI()'));
+  if (A === 'graphql'){
+    o.push(L('s.setup', 'SCHEMA = build_schema(open("schema.graphql").read())'),
+      L('s.route', '@app.post("/graphql")'),
+      L('s.route', 'async def view(request, body: dict):'),
+      L('s.parse', '    doc = parse(body["query"])   # client wrote this document'),
+      L('s.parse', '    errors = validate(SCHEMA, doc)   # parse + validate before any resolver runs'),
+      d.auth ? L('s.auth', '    ctx = verify(request.headers["authorization"])') : C('    ctx = None  # no bearer token yet: this endpoint authenticates from the body'),
+      L('s.dispatch', '    result = execute(SCHEMA, doc, context_value=ctx, variable_values=body["variables"])'),
+      C(''),
+      L('s.dispatch', 'def resolve_' + d.gqlField + '(info, ' + d.gqlArgs.join(', ') + '):   # resolver, dispatched per field in the selection set'),
+      d.dbSql ? L('s.db', '    rows = db.fetch(DB, ' + Object.keys(d.vars).map(v => 'f"%{' + v + '}%"').join(', ') + ')  # ' + d.dbMs + ' ms')
+              : L('s.db', '    rows = cache.get(' + Object.keys(d.vars)[0] + ')  # cache hit, ' + d.dbMs + ' ms'),
+      L('s.serialize', '    return rows   # the response layer writes {"data": ...}'),
+      L('s.body', '# 200 + application/json + Content-Length: ' + d.size + '   (errors also come back as 200 with {"errors": [...]})'));
+    return o;
+  }
+  const verb = d.method === 'POST' ? 'post' : 'get';
+  o.push(L('s.route', '@app.' + verb + '("' + d.path + '")'),
+    L('s.route', 'async def handle(' + (d.api === 'rest' ? restArgsPy(d) : '') + '):'),
+    L('s.parse', parseLinePy(d)),
+    d.auth ? L('s.auth', '    verify_bearer(authorization)   # lookup + expiry check') : C('    # this endpoint authenticates from the form body, not a bearer header'),
+    d.dbSql ? L('s.db', '    rows = db.fetch(DB, ' + pyArgs(d) + ')  # ' + d.dbMs + ' ms, ' + rowsN(d.dbRows))
+            : L('s.db', '    rows = cache.get(key)   # HIT, ' + d.dbMs + ' ms, no DB round trip'));
+  if (K === 'stream'){
+    o.push(L('s.headers', '    # status 200 + transfer-encoding: chunked written before the first byte'),
+      L('s.body', '    return StreamingResponse(chunks("movie.mp4"), media_type="application/octet-stream")'),
+      C(''),
+      L('s.route', 'async def chunks(path):'),
+      L('s.route', '    async with open_file(path) as f:'),
+      L('s.writeChunk', '        while chunk := await f.read(' + d.chunkSize + '):   # ' + d.count + ' flushes'),
+      L('s.writeChunk', '            yield chunk'),
+      L('s.close', '            # 0-length terminating chunk, then close'));
+  } else if (K === 'bytes'){
+    o.push(L('s.serialize', '    payload = open("logo.png", "rb").read()'),
+      L('s.headers', '    # Content-Type: image/png, Content-Length: ' + d.size + ' written first'),
+      L('s.body', '    return FileResponse("logo.png")   # sendfile(2), body bytes never copied by userspace'),
+      L('s.close', '    # 41728 bytes flushed to the client socket'));
+  } else {
+    o.push(L('s.serialize', '    payload = ' + pyRespLiteral(d)),
+      L('s.body', '    return JSONResponse(payload, media_type="application/json")   # status 200 + Content-Length: ' + d.size),
+      L('s.close', '    # uvicorn writes status line, headers, then the body bytes'));
+  }
+  return o;
+}
+function restArgsPy(d){
+  const a = [];
+  if (d.scenario.query) Object.entries(d.scenario.query).forEach(([k,v]) => a.push(k + ': ' + (typeof v === 'number' ? 'float' : 'str') + ' = Query(...)'));
+  if (d.method === 'POST') a.push('body: str = Body(...)');
+  if (d.auth) a.push('authorization: str = Header(...)');
+  return a.join(', ');
+}
+function parseLinePy(d){
+  if (d.api === 'graphql') return '    ' + d.gqlArgs[0] + ' = body["variables"]["' + d.gqlArgs[0] + '"]   # variables bind to $-names';
+  if (d.method === 'POST') return '    form = parse_form(body)   # grant_type, client_id, ...';
+  if (d.scenario.query) return '    # ' + d.path + ' matched, query params coerced to float/str';
+  return '    # ' + d.path + ' matched the static route: no query, nothing to coerce';
+}
+function pyArgs(d){
+  if (d.method === 'POST') return 'form["username"]';
+  if (!d.scenario.query) return 'path';
+  return Object.keys(d.scenario.query).map(k => k).join(', ');
+}
+function pyRespLiteral(d){
+  if (d.sc === 'search') return '{"query": q, "count": len(rows), "results": rows}';
+  if (d.sc === 'auth') return '{"access_token": mint(form), "token_type": "Bearer", "expires_in": 3600, "refresh_token": mint(form, ttl=86400)}';
+  if (d.sc === 'weather') return '{"station": "BERLIN", "temperature": 6.4, "windKph": 17.5, "humidity": 0.81, "conditions": "overcast"}';
+  return '{"data": rows}';
+}
+
+function svJs(d){
+  const A = d.api, K = d.eff, o = [];
+  if (A === 'ws'){
+    o.push(C('const { WebSocketServer } = require("ws");'), C(''),
+      L('s.setup', 'const wss = new WebSocketServer({ path: "' + d.wsPath + '" });'),
+      L('s.route', 'wss.on("upgrade", (req, socket, head) => {   // server answers 101 Upgrade'),
+      L('s.accept', '  const ws = accept(req, socket, head);'),
+      L('s.route', '  ws.on("message", (raw) => {'),
+      L('s.receiveFrame', '    const op = JSON.parse(raw);   // one text frame, 148 bytes'),
+      L('s.parse', '    const channel = op.channel;'),
+      d.auth ? L('s.auth', '    const who = await auth.verify(ws.subprotocol);') : C('    // unauthenticated demo channel'),
+      d.dbSql ? L('s.db', '    const rows = await db.query(DB);   // ' + d.dbMs + ' ms, ' + rowsN(d.dbRows))
+              : L('s.db', '    const rows = cache.get(op);   // HIT, ' + d.dbMs + ' ms'),
+      L('s.serialize', '    const payload = rows.map(r => ({ channel, name: r.name, downloads: r.downloads }));'),
+      L('s.writeChunk', '    payload.forEach(p => ws.send(JSON.stringify(p)));   // ' + d.count + ' frames'),
+      L('s.close', '  });'),
+      L('s.close', '  ws.on("close", () => feed.unsubscribe(ws));'));
+    return o;
+  }
+  if (A === 'grpc'){
+    o.push(C('const grpc = require("@grpc/grpc-js");'), C('const pb = grpc.loadSync("' + d.svc.replace('.', '/') + '.proto");'), C(''),
+      L('s.setup', 'const server = new grpc.Server();'),
+      L('s.route', 'server.addService(pb.' + cap(d.svc.split('.')[0]) + 'Service, {'),
+      L('s.route', '  ' + d.rpc + ': (call) => {'),
+      L('s.parse', '    const req = call.request;   // DATA frame -> length prefix -> protobuf -> object'),
+      d.auth ? L('s.auth', '    auth.verify(call.metadata.get("authorization"));') : C('    // no bearer metadata: this token endpoint authenticates from the message body'),
+      d.dbSql ? L('s.db', '    const rows = db.query(DB, [req.' + Object.keys(d.fields)[0] + ', req.' + (Object.keys(d.fields)[1] || 'limit') + ']);   // ' + d.dbMs + ' ms')
+              : L('s.db', '    const rows = cache.get(req.' + Object.keys(d.fields)[0] + ');   // HIT, ' + d.dbMs + ' ms'));
+    if (K === 'stream'){
+      o.push(L('s.serialize', '    rows.forEach((row, i) => call.write({ bytes: read_block(' + d.chunkSize + ') }));   // one message per frame'),
+        L('s.writeChunk', '    rows.forEach((row, i) => call.write({ bytes: read_block(' + d.chunkSize + ') }));   // ' + d.count + ' messages'),
+        L('s.close', '    call.end();   // END_STREAM + grpc-status: 0 trailers'));
+    } else if (K === 'bytes'){
+      o.push(L('s.serialize', '    const payload = fs.readFileSync("logo.png");'),
+        L('s.body', '    call.respond({ contentType: "image/png", payload });'),
+        L('s.close', '    // length-prefixed protobuf in one DATA frame, then trailers'));
+    } else {
+      o.push(L('s.serialize', '    const payload = { count: rows.length, results: rows };'),
+        L('s.body', '    call.respond(payload);'),
+        L('s.close', '    // status is HTTP/2 HEADERS, grpc-status is TRAILERS'));
+    }
+    o.push(L('s.setup', '});'), L('s.setup', 'server.addInsecurePort("[::]:8080", grpc.ServerCredentials.createInsecure());'));
+    return o;
+  }
+  const imp = A === 'graphql' ? 'const { buildSchema, graphql } = require("graphql");' : 'const express = require("express");';
+  o.push(C(imp), C(''), A === 'graphql'
+    ? L('s.setup', 'const schema = buildSchema(readFileSync("schema.graphql", "utf8"));')
+    : L('s.setup', 'const app = express();'));
+  if (A === 'graphql'){
+    o.push(L('s.route', 'async function ' + d.gqlField + '({ ' + d.gqlArgs.join(', ') + ' }) {   // resolver, dispatched per selection set'),
+      d.auth ? L('s.auth', '  await auth.verify(ctx.token);') : C('  // public field: no token check here'),
+      d.dbSql ? L('s.db', '  const rows = await db.query(DB, [' + Object.keys(d.vars).join(', ') + ']);   // ' + d.dbMs + ' ms')
+              : L('s.db', '  const rows = cache.get(' + Object.keys(d.vars)[0] + ');   // HIT, ' + d.dbMs + ' ms'),
+      L('s.serialize', '  return rows;'),
+      L('s.close', '}'), C(''),
+      L('s.route', 'app.post("/graphql", (req, res) => {'),
+      L('s.parse', '  const { query, variables } = req.body;'),
+      L('s.parse', '  const doc = parse(query), errors = validate(schema, doc);   // reject unknown fields'),
+      d.auth ? L('s.auth', '  const ctx = { token: req.headers.authorization };') : C('  const ctx = {};'),
+      L('s.dispatch', '  graphql({ schema, source: query, rootValue: { ' + d.gqlField + ' }, variableValues: variables, contextValue: ctx })'),
+      L('s.body', '    .then((r) => res.json({ data: r.data }));   // {"data":...} or {"errors":[...]}, still 200'),
+      L('s.close', '});'));
+    return o;
+  }
+  const m = d.method === 'POST' ? 'post' : 'get';
+  o.push(L('s.route', 'app.' + m + '("' + d.path + '", async (req, res) => {'),
+    L('s.parse', parseLineJs(d)),
+    d.auth ? L('s.auth', '  await auth.verify(req.headers.authorization);') : C('  // no bearer header here: this endpoint authenticates from the form body'),
+    d.dbSql ? L('s.db', '  const rows = await db.query(DB, [' + jsArgs(d) + ']);   // ' + d.dbMs + ' ms, ' + rowsN(d.dbRows))
+            : L('s.db', '  const rows = cache.get(req.query);   // HIT, ' + d.dbMs + ' ms, no DB round trip'));
+  if (K === 'stream'){
+    o.push(L('s.headers', '  res.writeHead(200, { "Content-Type": "application/octet-stream", "Transfer-Encoding": "chunked" });'),
+      L('s.body', '  const stream = createReadStream("movie.mp4", { highWaterMark: ' + d.chunkSize + ' });'),
+      L('s.writeChunk', '  stream.on("data", (chunk) => res.write(chunk));   // ' + d.count + ' flushes'),
+      L('s.close', '  stream.on("end", () => res.end());'));
+  } else if (K === 'bytes'){
+    o.push(L('s.headers', '  // Content-Type: image/png, Content-Length: ' + d.size + ' go out before the body'),
+      L('s.body', '  res.sendFile("logo.png");   // sendfile, no userspace copy'),
+      L('s.close', '  // ' + d.size + ' bytes flushed to the client socket'));
+  } else {
+    o.push(L('s.serialize', '  const payload = ' + jsRespLiteral(d)),
+      L('s.body', '  res.status(200).type("application/json").json(payload);'),
+      L('s.close', '});'));
+  }
+  return o;
+}
+function parseLineJs(d){
+  if (d.api === 'graphql') return '  const { query, variables } = req.body;';
+  if (d.method === 'POST') return '  const grant = req.body.grant_type;   // x-www-form-urlencoded';
+  if (d.scenario.query) return '  const { ' + Object.keys(d.scenario.query).join(', ') + ' } = req.query;';
+  return '  // ' + d.path + ' matched the static route: no query, nothing to coerce';
+}
+function jsArgs(d){
+  if (d.method === 'POST') return 'req.body.username';
+  if (!d.scenario.query) return 'req.params.file';
+  return Object.keys(d.scenario.query).map(k => 'req.query.' + k).join(', ');
+}
+function jsRespLiteral(d){
+  if (d.sc === 'search') return '{ query: q, count: rows.length, results: rows }';
+  if (d.sc === 'auth') return '{ access_token: mint(grant), token_type: "Bearer", expires_in: 3600, refresh_token: mint(refresh) }';
+  if (d.sc === 'weather') return '{ station: "BERLIN", temperature: 6.4, windKph: 17.5, humidity: 0.81, conditions: "overcast" }';
+  return '{ data: rows }';
+}
+
+function svJava(d){
+  const A = d.api, K = d.eff, o = [];
+  o.push(C('import com.acme.Web;'), C(''), L('s.setup', '@Service'));
+  if (A === 'grpc'){
+    o.push(L('s.setup', 'public class IndexService extends ' + cap(d.svc.split('.')[0]) + 'Service {'),
+      L('s.route', '  @Override'),
+      L('s.route', '  public ' + d.rt + ' ' + d.rpc.toLowerCase() + '(' + d.type + ' request, CallContext ctx) {'),
+      L('s.parse', '    // grpc-java already decoded the DATA frame into ' + d.type),
+      d.auth ? L('s.auth', '    auth.verify(ctx.header("authorization"));') : C('    // no bearer metadata: this token endpoint authenticates from the message body'),
+      d.dbSql ? L('s.db', '    var rows = jdbc.query(DB, request.' + Object.keys(d.fields)[0] + '(), request.' + (Object.keys(d.fields)[1] || 'limit') + '());  // ' + d.dbMs + ' ms')
+              : L('s.db', '    var rows = cache.get(request.' + Object.keys(d.fields)[0] + '());  // HIT, ' + d.dbMs + ' ms'));
+    if (K === 'stream') o.push(L('s.serialize', '    for (var row : rows) ch.write(new ' + d.rt + '(read_block(' + d.chunkSize + ')));   // ' + d.count + ' messages'),
+      L('s.close', '    // END_STREAM, grpc-status 0 in TRAILERS'));
+    else if (K === 'bytes') o.push(L('s.serialize', '    var payload = Files.read("logo.png");'),
+      L('s.body', '    return new ' + d.rt + '("image/png", payload);'),
+      L('s.close', '    // protobuf bytes -> one DATA frame'));
+    else o.push(L('s.serialize', '    var payload = new ' + d.rt + '(rows.size(), rows);'),
+      L('s.body', '    return payload;'),
+      L('s.close', '    // status is HEADERS, grpc-status is TRAILERS'));
+    o.push(L('s.close', '  }'), L('s.close', '}'), C(''),
+      L('s.setup', 'GrpcServer.insecure(8080).add(new IndexService()).start();'));
+    return o;
+  }
+  if (A === 'ws'){
+    o.push(L('s.setup', '@ApiWebSocketServer("/ws/live")'),
+      L('s.route', 'public void feed(WebSocket ws) {'),
+      L('s.accept', '  ws.accept();   // 101 Upgrade already decided by the router'),
+      L('s.receiveFrame', '  var op = Json.read(ws.receive());'),
+      L('s.parse', '  var channel = op.get("channel");'),
+      d.auth ? L('s.auth', '  var who = auth.verify(ws.subProtocol());') : C('  // public feed: no credential check on this socket'),
+      d.dbSql ? L('s.db', '  var rows = jdbc.query(DB);   // ' + d.dbMs + ' ms, ' + rowsN(d.dbRows))
+              : L('s.db', '  var rows = cache.get(op);   // HIT, ' + d.dbMs + ' ms'),
+      L('s.serialize', '  var payload = rows.map(r -> Json.write(Map.of("channel", channel, "name", r.name, "downloads", r.downloads)));'),
+      L('s.writeChunk', '  payload.forEach(p -> ws.sendText(p));   // ' + d.count + ' TEXT frames'),
+      L('s.close', '}'));
+    return o;
+  }
+  o.push(L('s.setup', 'public class IndexController {'));
+  if (A === 'graphql'){
+    o.push(L('s.setup', '  @Graphql'),
+      L('s.setup', '  public Schema schema = Schema.from(readFile("schema.graphql"));'), C(''),
+      L('s.route', '  @GraphqlIgnore'),
+      L('s.route', '  public ' + d.gqlCap + 'Result ' + d.gqlField + '(' + d.gqlJavaArgs + ') {   // resolver dispatched per field'),
+      d.auth ? L('s.auth', '    auth.verify(currentContext().token());') : C('    // public field: no token check here'),
+      d.dbSql ? L('s.db', '    var rows = jdbc.query(DB, ' + Object.keys(d.vars).join(', ') + ');   // ' + d.dbMs + ' ms, ' + rowsN(d.dbRows))
+              : L('s.db', '    var rows = cache.get(' + Object.keys(d.vars)[0] + ');   // HIT, ' + d.dbMs + ' ms'),
+      L('s.serialize', '    return new ' + d.gqlCap + 'Result(rows);'),
+      L('s.close', '  }'), C(''),
+      L('s.route', '  @RequestMapping(value = "/graphql", method = POST)'),
+      L('s.parse', '  public ExecutionResult view(GraphqlRequest req) {   // parse + validate the client document'),
+      L('s.dispatch', '    return executor.execute(schema.parse(req.query()), req.variables(), currentContext());'),
+      L('s.body', '    // {"data": ...} -> application/json, Content-Length: ' + d.size),
+      L('s.close', '  }'));
+    return o;
+  }
+  o.push(L('s.route', '  @' + (d.method === 'POST' ? 'PostMapping' : 'GetMapping') + '("' + d.path + '")'),
+    L('s.route', '  public ' + (K === 'bytes' || K === 'stream' ? 'ResponseEntity' : d.gqlCap + 'Result') + ' handle(' + javaArgs(d) + ') {'),
+    L('s.parse', parseLineJava(d)),
+    d.auth ? L('s.auth', '    auth.verify(req.header("Authorization"));') : C('    // the client secret is in the body here, not an Authorization header'),
+    d.dbSql ? L('s.db', '    var rows = jdbc.query(DB, ' + javaArgs2(d) + ');   // ' + d.dbMs + ' ms, ' + rowsN(d.dbRows))
+            : L('s.db', '    var rows = cache.get(key);   // HIT, ' + d.dbMs + ' ms, no DB round trip'));
+  if (K === 'stream'){
+    o.push(L('s.headers', '    headers.set("Transfer-Encoding", "chunked");'),
+      L('s.body', '    return ResponseEntity.stream(new FileInputStream("movie.mp4"));'),
+      L('s.writeChunk', '    // Tomcat copies ' + d.chunkSize + '-byte chunks from the InputStream to the socket   // ' + d.count + ' times'),
+      L('s.close', '    // terminating 0-length chunk, then close'));
+  } else if (K === 'bytes'){
+    o.push(L('s.serialize', '    var payload = Files.read("logo.png");   // ' + d.size + ' bytes'),
+      L('s.headers', '    headers.set("Content-Type", "image/png"); headers.setContentLength(' + d.size + ');'),
+      L('s.body', '    return ResponseEntity.bytes(payload);   // sendfile where the OS allows it'),
+      L('s.close', '    // body flushed straight to the client socket'));
+  } else {
+    o.push(L('s.serialize', '    var payload = ' + javaRespLiteral(d)),
+      L('s.body', '    return payload;   // Jackson: application/json, Content-Length: ' + d.size),
+      L('s.close', '  }'));
+  }
+  o.push(L('s.close', '}'));
+  return o;
+}
+function javaArgs(d){
+  if (d.api === 'rest') return 'SearchRequest req';
+  return '';
+}
+function javaArgs2(d){
+  if (d.method === 'POST') return 'req.body().get("username")';
+  if (!d.scenario.query) return 'req.file()';
+  return Object.keys(d.scenario.query).map(k => 'req.' + k + '()').join(', ');
+}
+function parseLineJava(d){
+  if (d.api === 'graphql') return '    // variables bound to $-names from the document';
+  if (d.method === 'POST') return '    var grant = req.body().get("grant_type");';
+  if (d.scenario.query) return '    // Spring bound ' + Object.keys(d.scenario.query).join(', ') + ' from the query string';
+  return '    // ' + d.path + ' matched the static route: no query, nothing to coerce';
+}
+function javaRespLiteral(d){
+  if (d.sc === 'search') return 'new SearchResult(req.q(), rows.size(), rows)';
+  if (d.sc === 'auth') return 'new TokenResponse(auth.mint(req.body()), "Bearer", 3600)';
+  if (d.sc === 'weather') return 'new WeatherResponse("BERLIN", 6.4, 17.5, 0.81, "overcast")';
+  return 'new ' + d.gqlCap + 'Result(rows)';
+}
+
+function svCSharp(d){
+  const A = d.api, K = d.eff, o = [];
+  if (A === 'grpc'){
+    o.push(C('using Grpc.Core;'), C(''),
+      L('s.setup', 'public class IndexService : ' + cap(d.svc.split('.')[0]) + 'Service {'),
+      L('s.route', '  public override async Task<' + d.rt + '> ' + d.rpc + '(' + d.type + ' request, CallContext ctx) {'),
+      L('s.parse', '    // grpc-dotnet decoded HTTP/2 DATA -> length prefix -> ' + d.type),
+      d.auth ? L('s.auth', '    Auth.Verify(ctx.RequestHeaders.GetValue("authorization"));') : C('    // no bearer metadata: this token endpoint authenticates from the message body'),
+      d.dbSql ? L('s.db', '    var rows = await db.QueryAsync(DB, new { ' + Object.keys(d.fields).map(k => 'Request.' + cap(k)).join(', ') + ' });   // ' + d.dbMs + ' ms')
+              : L('s.db', '    var rows = cache.Get(Request.' + cap(Object.keys(d.fields)[0]) + ');   // HIT, ' + d.dbMs + ' ms'));
+    if (K === 'stream') o.push(L('s.serialize', '    foreach (var row in rows) await ctx.WriteAsync(new ' + d.rt + ' { Bytes = ReadBlock(' + d.chunkSize + ') });   // ' + d.count + ' messages'),
+      L('s.close', '    // End of stream -> TRAILERS grpc-status 0'));
+    else if (K === 'bytes') o.push(L('s.serialize', '    var payload = File.ReadAllBytes("logo.png");'),
+      L('s.body', '    return new ' + d.rt + ' { ContentType = "image/png", Payload = payload };'),
+      L('s.close', '    // serialised into one DATA frame'));
+    else o.push(L('s.serialize', '    var payload = new ' + d.rt + ' { Count = rows.Count, Results = rows };'),
+      L('s.body', '    return payload;'),
+      L('s.close', '    // grpc-status lives in response trailers'));
+    o.push(L('s.close', '  }'), L('s.close', '}'), C(''),
+      L('s.setup', 'Server.Create(8080).Add(IndexService.Create()).Start();'));
+    return o;
+  }
+  if (A === 'ws'){
+    o.push(C('using System.Net.WebSocket;'), C(''),
+      L('s.setup', 'var app = Builder.CreateApp();'),
+      L('s.route', 'app.MapGet("' + d.wsPath + '", (ctx) => ctx.WebSocket(async (ws) => {'),
+      L('s.accept', '  await ws.AcceptAsync();   // 101 Upgrade, this closure owns the socket for its lifetime'),
+      L('s.receiveFrame', '  var op = Json.Parse(await ws.ReceiveAsync());'),
+      L('s.parse', '  var channel = op["channel"];'),
+      d.auth ? L('s.auth', '  var who = Auth.Verify(ws.SubProtocol);') : C('  // public feed: no credential check on this socket'),
+      d.dbSql ? L('s.db', '  var rows = await db.QueryAsync(DB);   // ' + d.dbMs + ' ms, ' + rowsN(d.dbRows))
+              : L('s.db', '  var rows = cache.Get(op);   // HIT, ' + d.dbMs + ' ms'),
+      L('s.serialize', '  var payload = rows.Select(r => Json.Write(new { channel, name = r.Name, downloads = r.Downloads }));'),
+      L('s.writeChunk', '  foreach (var p in payload) await ws.SendAsync(p);   // ' + d.count + ' text frames'),
+      L('s.close', '}));'));
+    return o;
+  }
+  const imp = A === 'graphql' ? 'using GraphQL; using GraphQL.Http;' : 'using System.Text.Json;';
+  o.push(C(imp), C(''), L('s.setup', 'var app = Builder.CreateApp();'));
+  if (A === 'graphql') o.push(L('s.setup', 'var schema = Schema.Parse(File.ReadAllText("schema.graphql"));'));
+  if (A === 'graphql'){
+    o.push(L('s.route', 'app.MapPost("/graphql", async (ctx) => {'),
+      L('s.parse', '  var doc = Parser.Parse(ctx.Request.Body);   // the document the client wrote'),
+      L('s.parse', '  foreach (var e in Validator.Validate(schema, doc)) ctx.AppendError(e);   // parse + validate first'),
+      d.auth ? L('s.auth', '  var graphqlCtx = new GraphQLContext { Token = ctx.Header("Authorization") };') : C('  var graphqlCtx = new GraphQLContext();'),
+      L('s.dispatch', '  var result = await ExecuteAsync(new ExecutionOptions { Schema = schema, Document = doc, Context = graphqlCtx, VariableValues = Json.Parse(ctx.Body["variables"]) });'),
+      L('s.body', '  await ctx.RespondJsonAsync(new { data = result.Data });   // {"data":...} or {"errors":[...]}, still 200'),
+      L('s.close', '});'), C(''),
+      L('s.route', 'public class ' + d.gqlCap + 'Query {'),
+      L('s.route', '  public static async Task<List<object>> ' + d.gqlCap + 'Async(GraphQLContext ctx, ' + d.gqlCArgs + ') {'),
+      d.auth ? L('s.auth', '    await Auth.VerifyAsync(ctx.Token);') : C('    // public field: no token check here'),
+      d.dbSql ? L('s.db', '    var rows = await db.QueryAsync(DB, new { ' + Object.keys(d.vars).join(', ') + ' });   // ' + d.dbMs + ' ms')
+              : L('s.db', '    var rows = cache.Get(' + Object.keys(d.vars)[0] + ');   // HIT, ' + d.dbMs + ' ms'),
+      L('s.serialize', '    return rows;'),
+      L('s.close', '  }'),
+      L('s.close', '}'));
+    return o;
+  }
+  o.push(L('s.route', 'app.Map' + (d.method === 'POST' ? 'Post' : 'Get') + '("' + d.path + '", async (ctx) => {'),
+    L('s.parse', parseLineC(d)),
+    d.auth ? L('s.auth', '  await Auth.VerifyAsync(ctx.Header("Authorization"));') : C('  // no bearer header here: this endpoint authenticates from the form body'),
+    d.dbSql ? L('s.db', '  var rows = await db.QueryAsync(DB, new { ' + cArgs(d) + ' });   // ' + d.dbMs + ' ms, ' + rowsN(d.dbRows))
+            : L('s.db', '  var rows = cache.Get(ctx.Query());   // HIT, ' + d.dbMs + ' ms, no DB round trip'));
+  if (K === 'stream'){
+    o.push(L('s.headers', '  ctx.RespondWithHeader("Transfer-Encoding", "chunked"); ctx.RespondWith("application/octet-stream");'),
+      L('s.body', '  await foreach (var chunk in File.ReadChunksAsync("movie.mp4", ' + d.chunkSize + '))'),
+      L('s.writeChunk', '    await ctx.Body.WriteAsync(chunk);   // ' + d.count + ' flushes'),
+      L('s.close', '  // terminating 0-length chunk, then close'));
+  } else if (K === 'bytes'){
+    o.push(L('s.serialize', '  var payload = File.ReadAllBytes("logo.png");   // ' + d.size + ' bytes'),
+      L('s.headers', '  ctx.RespondWithHeader("Content-Type", "image/png"); ctx.RespondWithHeader("Content-Length", "' + d.size + '");'),
+      L('s.body', '  await ctx.Body.WriteAsync(payload);   // zero-copy where the OS allows it'),
+      L('s.close', '  // body bytes flushed to the client socket'));
+  } else {
+    o.push(L('s.serialize', '  var payload = ' + cRespLiteral(d)),
+      L('s.body', '  await ctx.RespondJsonAsync(payload);   // 200 + application/json + Content-Length: ' + d.size),
+      L('s.close', '}));'));
+  }
+  return o;
+}
+function parseLineC(d){
+  if (d.api === 'graphql') return '  // variables bound to $-names from the document';
+  if (d.method === 'POST') return '  var grant = Form.Parse(ctx.Body)["grant_type"];';
+  if (d.scenario.query) return '  var ' + Object.keys(d.scenario.query).map(k => k + ' = ctx.Query("' + k + '")').join('; var ') + ';';
+  return '  // ' + d.path + ' matched the static file route: no query, nothing to coerce';
+}
+function cArgs(d){
+  if (d.method === 'POST') return 'form["username"]';
+  if (!d.scenario.query) return 'ctx.File';
+  return Object.keys(d.scenario.query).map(k => k).join(', ');
+}
+function cRespLiteral(d){
+  if (d.sc === 'search') return 'new SearchResponse { Query = q, Count = rows.Count, Results = rows }';
+  if (d.sc === 'auth') return 'new TokenResponse { AccessToken = Auth.Mint(form), Token_Type = "Bearer", Expires_In = 3600 }';
+  if (d.sc === 'weather') return 'new WeatherResponse { Station = "BERLIN", Temperature = 6.4, WindKph = 17.5, Humidity = 0.81 }';
+  return 'new SearchResponse { Data = rows }';
+}
+const SERVER = { python:svPython, js:svJs, java:svJava, csharp:svCSharp };
+
+/* ============================================================
+   step model: phases, wire events, trace text
+   ============================================================ */
+const PH_BASE = {
+  rest:{ 'c.setup':10,'c.body':22,'c.headers':26,'c.send':30,'c.upgrade':30,'c.sendFrame':30,'c.recvHeaders':70,'c.recv101':42,
+    'c.decode':74,'c.use':78,'c.fileOpen':68,'c.readChunk':59,'c.write':59.5,'c.close':82,
+    's.setup':12,'s.route':45,'s.parse':47,'s.dispatch':51,'s.auth':53,'s.db':56,'s.serialize':60,'s.headers':62,'s.body':65,'s.writeChunk':58,'s.accept':38,'s.receiveFrame':44,'s.close':72 },
+  graphql:null, grpc:null, ws:null,
+};
+PH_BASE.graphql = Object.assign({}, PH_BASE.rest, { 's.dispatch':51, 's.db':54, 's.serialize':58 });
+PH_BASE.grpc = { 'c.setup':10,'c.body':22,'c.headers':26,'c.send':30,'c.recvHeaders':72,'c.recv101':42,'c.decode':76,'c.use':80,
+  'c.fileOpen':70,'c.readChunk':59,'c.write':59.5,'c.close':84,
+  's.setup':12,'s.route':44,'s.parse':46,'s.dispatch':51,'s.auth':48,'s.db':52,'s.serialize':56,'s.headers':60,'s.body':66,'s.writeChunk':58,'s.accept':38,'s.receiveFrame':44,'s.close':74 };
+PH_BASE.ws = { 'c.setup':10,'c.body':20,'c.headers':24,'c.upgrade':28,'c.sendFrame':44,'c.recv101':42,'c.recvHeaders':42,'c.decode':55.6,
+  'c.use':64,'c.fileOpen':46,'c.readChunk':55.2,'c.write':55.4,'c.close':66,
+  's.route':36,'s.accept':38,'s.receiveFrame':46,'s.parse':48,'s.dispatch':49,'s.auth':49.5,'s.db':51,'s.serialize':54,'s.headers':37,'s.body':54,'s.writeChunk':54,'s.setup':12,'s.close':62 };
+
+function phases(d){
+  const P = Object.assign({}, PH_BASE[d.api]);
+  if (d.eff === 'stream'){
+    if (d.api !== 'ws'){
+      P['s.headers'] = 50; P['s.body'] = 52; P['c.recvHeaders'] = 54; P['c.fileOpen'] = 55;
+      P['s.writeChunk'] = 58; P['c.readChunk'] = 59; P['c.write'] = 59.5; P['s.close'] = 74; P['c.close'] = 78;
+    }
+  } else if (d.eff === 'frames'){
+    P['s.headers'] = 37; P['s.body'] = 54; P['c.recvHeaders'] = 42;
+    P['s.writeChunk'] = 54; P['c.readChunk'] = 55.2; P['c.decode'] = 55.6; P['s.close'] = 62; P['c.close'] = 66;
+  } else if (d.kind === 'bytes'){
+    P['c.fileOpen'] = 72; P['c.write'] = 76; P['c.decode'] = 74;
+  }
+  return P;
+}
+const STEP = { 's.writeChunk':1.5, 'c.readChunk':1.5, 'c.write':1.5, 'c.decode':1.5 };
+const REPEAT = {
+  's.writeChunk': d => d.count, 'c.readChunk': d => d.count, 'c.write': d => d.count,
+  'c.decode': d => (d.eff === 'frames' ? d.count : 1),
+};
+const SIDE = { client:'client', server:'server' };
+const MS = { 'c.setup':3,'c.body':1,'c.headers':1,'c.send':2,'c.upgrade':2,'c.sendFrame':1,'c.recvHeaders':1,'c.recv101':1,
+  'c.decode':4,'c.use':1,'c.fileOpen':1,'c.readChunk':15,'c.write':12,'c.close':1,
+  's.setup':2,'s.route':2,'s.parse':3,'s.dispatch':2,'s.db':null,'s.serialize':3,'s.headers':1,'s.body':5,'s.writeChunk':40,
+  's.accept':1,'s.receiveFrame':2,'s.close':1 };
+
+
+function traceMsg(key, d, i, n){
+  const iter = n > 1 ? '  [' + (i+1) + '/' + n + ']' : '';
+  const url = (d.api === 'grpc') ? d.path : d.url;
+  switch (key){
+    case 'c.setup': return { m:'client: create HTTP client / connection pool', w:null,
+      note:'One client object usually owns a keep-alive pool: the socket opened for this call is reused for the next one.' };
+    case 'c.body': return { m:'client: encode the payload -> ' + d.bytesLabel, w:null,
+      note:'Serialisation happens on the client: query string, form fields, JSON, protobuf, or a query document. The server only sees bytes.' };
+    case 'c.headers': return { m:'client: add headers: ' + (d.auth ? 'Authorization: Bearer ' + TOK.slice(0,14) + '…, ' : '') + 'Accept: ' + d.ctype, w:null,
+      note:'Credentials travel in headers (or the WebSocket subprotocol), never in the URL, so they stay out of access logs.' };
+    case 'c.send': return { m:'client: ' + d.method + ' ' + url + '  -> request written to the socket', w:null,
+      note:'This is where a "call" becomes bytes: method line, headers, then body.' };
+    case 'c.upgrade': return { m:'client: GET ' + d.wsPath + ' asking for Upgrade: websocket', w:null,
+      note:'An upgrade request is an ordinary HTTP GET that asks to be promoted to a raw socket.' };
+    case 'c.sendFrame': return { m:'client: send TEXT frame (' + JSON.stringify(d.msg).length + ' bytes)', w:null,
+      note:'WebSocket frames are masked, not chunked: no Content-Length, no chunk hex, one opcode + payload.' };
+    case 'c.recvHeaders': return { m:'client: status ' + d.status + ' + response headers received', w:null,
+      note:'Headers arrive before the body, which is why a streaming client can start work immediately.' };
+    case 'c.recv101': return { m:'client: 101 Upgrade received -> this is now a WebSocket', w:null,
+      note:'After 101 there are no status codes, no Content-Type, no Content-Length: the protocol is whatever both sides agree on.' };
+    case 'c.decode': return { m:'client: decode bytes -> ' + (d.eff === 'frames' ? 'message ' + (i+1) + '/' + n : d.kind === 'bytes' ? d.size + ' opaque bytes (' + d.ctype + ')' : 'UTF-8 then JSON parse'), w:null,
+      note:'The wire carries bytes; turning them into objects is the client\'s job and it costs time.' };
+    case 'c.use': return { m:'client: use the value', w:null };
+    case 'c.fileOpen': return { m:'client: open movie.mp4 / logo.png for writing', w:null };
+    case 'c.readChunk': return { m:'client: read chunk into ' + d.chunkSize + '-byte buffer' + iter, w:null,
+      note:'Streaming means constant memory: buffer size decides peak RAM, not file size.' };
+    case 'c.write': return { m:'client: append bytes to the file' + iter, w:null };
+    case 'c.close': return { m:'client: ' + (d.api === 'ws' ? 'close the WebSocket' : d.api === 'grpc' ? 'close the channel' : 'response done, socket kept alive'), w:null };
+    case 's.setup': return { m:'server: route / schema / service registered at boot', w:null,
+      note:'Route tables, GraphQL schemas and gRPC services are built once at startup; each request is a lookup, not a build.' };
+    case 's.route': return { m:'server: match ' + d.method + ' ' + d.path + ' -> handler', w:null,
+      note:'Routing is a prefix tree (or a schema field lookup). The handler signature is where parsing happens.' };
+    case 's.parse': return { m:'server: parse request -> ' + (d.api === 'graphql' ? 'query document + variables + validation' : d.api === 'grpc' ? d.type + ' (protobuf)' : d.method === 'POST' ? 'form fields' : d.scenario.query ? 'path params + query string' : 'path only'), w:null,
+      note:'Validate cheap things here, before touching storage.' };
+    case 's.dispatch': return { m:'server: dispatch into resolver / RPC implementation', w:null,
+      note:'One request can fan out into several resolvers; each one is a separate function call.' };
+    case 's.auth': return { m:'server: verify credential (' + (d.sc === 'auth' ? 'password hash compare' : 'bearer token lookup') + ')', w:null,
+      note:'Auth is often the expensive half of a cheap request — cache the decision, not just the data.' };
+    case 's.db': return { m:'server: ' + (d.dbSql ? 'execute SQL -> ' + rowsN(d.dbRows) : 'cache HIT -> ' + d.dbMs + ' ms, no DB round trip'),
+      w: d.dbSql ? 'SQL: ' + d.dbSql : null,
+      note: d.nodb ? 'Static file route: no query plan, no cache. The page cache plus sendfile is what makes it cheap.'
+          : d.cache ? 'Cached: ~2 ms and no pool connection. Same query cold: ~14 ms plus connection overhead.' : 'This step usually dominates latency.' };
+    case 's.serialize': return { m:'server: build response object (' + d.ctype + ')', w:null };
+    case 's.headers': return { m:'server: write status + response headers', w:null,
+      note:'Headers first, bytes after. For a stream the server commits to a size it does not know yet, so it uses chunked encoding.' };
+    case 's.body': return { m:'server: write body (' + (d.kind === 'bytes' ? bytesOf(d.size) + ' binary' : d.kind === 'stream' ? 'stream opened, size unknown' : d.size + ' bytes') + ')', w:null };
+    case 's.writeChunk': return { m:'server: flush ' + bytesOf(d.chunkSize) + ' to the socket' + iter, w:null,
+      note:'Backpressure: if the client stops reading, the server stalls instead of buffering the whole file.' };
+    case 's.accept': return { m:'server: accept 101 Upgrade, this handler owns the socket', w:null };
+    case 's.receiveFrame': return { m:'server: receive TEXT frame (' + JSON.stringify(d.msg).length + ' bytes)', w:null };
+    case 's.close': return { m:'server: ' + (d.eff === 'stream' ? 'end the stream (0-length terminating chunk)' : d.api === 'ws' ? 'close frames, release the feed subscription' : 'finish the response'), w:null };
+  }
+  return { m:key, w:null, note:null };
+}
+
+function wireEvents(d, P){
+  const E = [];
+  const push = (p, txt, short) => E.push({ p, side:'wire', txt, short });
+  const frame = (len) => 'DATA  len ' + len + '  | 00 00 00 00 ' + (len >>> 24).toString(16) + ' <protobuf ' + len + ' bytes>';
+  const reqBytes = d.bodyWire ? d.bodyWire.length : (d.api === 'graphql' ? JSON.stringify({ query: d.doc.join(' '), variables: d.vars }).length : 0);
+  const grpcBytes = d.api === 'grpc' ? 34 + (d.kind === 'bytes' ? d.size : 0) : 0;
+
+  if (d.api === 'ws'){
+    push(30, 'GET ' + d.wsPath + ' HTTP/1.1\nHost: ' + d.host + '\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Version: 13\nSec-WebSocket-Key: dGhlIjYtOHhcYpR9TQwAq/BC==', 'upgrade request');
+    push(40, 'HTTP/1.1 101 Upgrade\nUpgrade: websocket\nSec-WebSocket-Accept: s3pplABhC7O2Y0y4FhYhC9Q=   (sha1 of key + GUID)', '101 Upgrade');
+    for (let i = 0; i < d.count; i++){
+      const kind = d.kind === 'stream' || d.kind === 'bytes' ? 'BINARY' : 'TEXT';
+      const size = (d.kind === 'stream' || d.kind === 'bytes') ? d.chunkSize : payloadText(d, i).length;
+      push(P['s.writeChunk'] + 0.4 + i*1.5, 'frame ' + (i+1) + '/' + d.count + '  ' + kind + '  ' + size + ' bytes  opcode 0x' + (kind === 'TEXT' ? '1' : '2') + ' FIN=1\n' + payloadText(d, i), 'frame ' + (i+1) + '/' + d.count);
+      push(P['s.writeChunk'] + 0.9 + i*1.5, 'socket -> client: frame ' + (i+1) + '/' + d.count + ' delivered, no length prefix on the wire', 'frame ' + (i+1) + ' received');
+    }
+    push(P['c.close'] - 0.5, 'close(1000) from both sides  -> no status code, no Content-Length ever existed', 'close');
+    return E;
+  }
+  push(33, 'dns       ' + d.host + ' -> 203.0.113.7  (resolver cache hit)', 'dns');
+  push(35, 'tcp       connect ' + d.host + ':443  ... 9 ms', 'tcp connect');
+  push(37, d.api === 'grpc' ? 'h2        prior-knowledge HTTP/2, SETTINGS + WINDOW_UPDATE, no upgrade round trip' : 'tls       TLSv1.3 handshake, ALPN h2, session ticket reused', d.api === 'grpc' ? 'http/2 settings' : 'tls handshake');
+
+  if (d.api === 'grpc'){
+    push(39, ':method POST   :scheme http   :authority ' + d.host + '   :path ' + d.path, ':path');
+    push(40.5, 'content-type: application/grpc   grpc-encoding: identity   user-agent: grpc-python/1.60', 'grpc metadata');
+    push(42, frame(grpcBytes) + '\n  05 00 00 00 22  = 5-byte prefix: compressed-flag + uint32 length', 'request message');
+    push(P['s.headers'] + 2, 'HEADERS  :status 200   content-type: application/grpc', 'response HEADERS');
+    if (d.eff === 'stream'){
+      for (let i = 0; i < d.count; i++){
+        push(P['s.writeChunk'] + 0.4 + i*1.5, frame(d.chunkSize) + '   message ' + (i+1) + '/' + d.count, 'message ' + (i+1) + '/' + d.count);
+        push(P['s.writeChunk'] + 0.9 + i*1.5, 'client: DATA frame ' + (i+1) + '/' + d.count + ' decoded into ' + d.rt, 'decode ' + (i+1));
+      }
+      push(P['s.close'] - 0.5, 'HEADERS (END_STREAM)   grpc-status: 0   grpc-message: ""', 'trailers');
+    } else {
+      push(P['s.body'] + 2, frame(grpcBytes), 'response message');
+      push(P['c.recvHeaders'] - 2, 'TRAILERS  grpc-status: 0   grpc-message: ""   (a failure is a trailer, not a status code)', 'trailers');
+    }
+    push(P['c.close'] - 0.5, 'socket stays open; other RPCs multiplex on the same connection', 'multiplexed');
+    return E;
+  }
+
+  push(39, d.method + ' ' + d.url + ' HTTP/1.1\nHost: ' + d.host, 'request line');
+  push(40.5, (d.auth ? 'authorization: Bearer ' + TOK + '\n' : '') + 'accept: ' + d.ctype + (reqBytes ? '\ncontent-type: ' + d.ctypeReq + '\ncontent-length: ' + reqBytes : ''), 'request headers');
+  if (reqBytes) push(42, (d.bodyWire || JSON.stringify({ query: d.doc.join(' '), variables: d.vars })) + '   (' + reqBytes + ' bytes)', 'request body');
+
+  if (d.eff === 'stream'){
+    push(P['s.headers'] + 2, 'HTTP/1.1 200 OK\ncontent-type: ' + d.ctype + '\ntransfer-encoding: chunked', 'response headers (chunked)');
+    for (let i = 0; i < d.count; i++){
+      push(P['s.writeChunk'] + 0.4 + i*1.5, hex(d.chunkSize) + '\\r\\n  ' + payloadText(d, i) + '\\r\\n', 'chunk ' + (i+1) + '/' + d.count);
+      push(P['s.writeChunk'] + 0.9 + i*1.5, 'socket -> client: ' + d.chunkSize + ' bytes written (' + bytesOf(d.chunkSize*(i+1)) + ' of ' + bytesOf(d.size) + ')', 'received ' + (i+1));
+    }
+    push(P['s.close'] - 0.6, '0\\r\\n\\r\\n   empty terminating chunk: the client now knows the body ended', 'terminating chunk');
+  } else if (d.kind === 'bytes'){
+    push(P['s.headers'] + 2, 'HTTP/1.1 200 OK\ncontent-type: ' + d.ctype + '\ncontent-length: ' + d.size + '\ncache-control: public, max-age=31536000', 'response headers');
+    push(P['s.body'] + 2, '<' + bytesOf(d.size) + ' ' + d.ctype + '>\n' + payloadText(d, 0) + '\nsendfile(2): bytes copied disk -> socket without touching userspace', 'binary body');
+  } else {
+    push(P['s.headers'] + 2, 'HTTP/1.1 200 OK\ncontent-type: ' + d.ctype + '\ncontent-length: ' + d.size + (d.api === 'graphql' ? '\nx-generator: graphql-js' : '\nx-ratelimit-remaining: 4999'), 'response headers');
+    push(P['s.body'] + 2, d.respBody + '   ' + d.size + ' bytes', 'response body');
+  }
+  push(P['c.close'] - 0.5, 'connection: keep-alive -> the socket stays open for the next call', 'keep-alive');
+  return E;
+}
+function hex(n){ return n.toString(16).toUpperCase() + '  (' + n + ')'; }
+
+function buildSteps(cl, sv, d){
+  const P = phases(d);
+  const items = [];
+  cl.forEach((ln, i) => { if (ln.k) items.push({ k:ln.k, side:'client', line:i, txt:ln.t.trim() }); });
+  sv.forEach((ln, i) => { if (ln.k) items.push({ k:ln.k, side:'server', line:i, txt:ln.t.trim() }); });
+  const out = [];
+  for (const it of items){
+    if (!(it.k in P)) console.warn('no phase for key', it.k);
+    const base = (it.k in P) ? P[it.k] : 99;
+    const n = Math.max(1, REPEAT[it.k] ? REPEAT[it.k](d) : 1);
+    for (let i = 0; i < n; i++)
+      out.push({ k:it.k, side:it.side, line:it.line, txt:it.txt, i, n, p: base + i*(STEP[it.k] || 0) });
+  }
+  wireEvents(d, P).forEach(w => out.push({ k:null, side:'wire', txt:w.txt, short:w.short, i:0, n:1, p:w.p }));
+  out.sort((a, b) => a.p - b.p);
+  let t = 0;
+  for (const s of out){
+    const ms = s.side === 'wire' ? 1 : s.k === 's.db' ? (d.dbMs || 2)
+      : s.k === 's.auth' ? (d.sc === 'auth' ? 240 : 3)
+      : (MS[s.k] || 2);
+    s.t = t; t += ms;
+  }
+  return { steps: out, P };
+}
+
+/* ============================================================
+   syntax highlight
+   ============================================================ */
+const KWSET = {
+  python: new Set('import from def async await return class if elif else while for in with as yield break print None True False lambda try except raise pass open len self'.split(' ')),
+  js: new Set('const let var function async await return require new if else for of in class import export from break catch try throw null true false undefined this typeof'.split(' ')),
+  java: new Set('public private protected class new var void static final return import package for if else while try catch this null true false int String byte char extends override'.split(' ')),
+  csharp: new Set('var async await public private static class new return using namespace foreach if else while null true false Task void string int override get set'.split(' ')),
+};
+function hl(text, lang){
+  const e = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const set = KWSET[lang];
+  const kw = s => e(s).replace(/[A-Za-z_$][A-Za-z0-9_$]*/g, w => set.has(w) ? '<span class=tk-k>' + w + '</span>' : w);
+  const RX = /(\/\/[^\n]*|#[^\n]*)|("(?:[^"\\]|\\\.)*"|("""[\s\S]*?"""))|(\b\d[\d_.,]*\b)|(@[\w.]+|<\/?[A-Za-z][\w]*>)/g;
+  const out = [];
+  let last = 0, m;
+  while ((m = RX.exec(text)) !== null){
+    if (m.index > last) out.push(kw(text.slice(last, m.index)));
+    if (m[1]) out.push('<span class=tk-c>' + e(m[1]) + '</span>');
+    else if (m[2] || m[3]) out.push('<span class=tk-s>' + e(m[2] || m[3]) + '</span>');
+    else if (m[4]) out.push('<span class=tk-n>' + e(m[4]) + '</span>');
+    else if (m[5]) out.push('<span class=tk-a>' + e(m[5]) + '</span>');
+    last = m.index + m[0].length;
+  }
+  out.push(kw(text.slice(last)));
+  return out.join('');
+}
+
+const PRINTS = {
+  python: '    print(chunk.name, chunk.downloads)   # handled the moment the message lands',
+  js:     '  console.log(chunk.name, chunk.downloads);   // push-based: nothing waits here',
+  java:   '    System.out.println(chunk.getName() + " " + chunk.getDownloads());   // one message per iteration',
+  csharp: '  Console.WriteLine($"{chunk.name} {chunk.downloads}");   // runs whenever the feed pushes',
+};
+function sinkFix(lines, lang, d){
+  if (d.sink !== 'stdout') return lines;
+  const out = [];
+  for (const ln of lines){
+    if (ln.k === 'c.fileOpen') continue;
+    if (ln.k === 'c.write'){ out.push(L('c.decode', PRINTS[lang])); continue; }
+    out.push(ln);
+  }
+  return out;
+}
+const DBLINES = {
+  python: '    # static file route: no query, no cache - open("movie.mp4") is just a file descriptor',
+  js:     '  // static route: no query, no cache - the OS page cache is what makes this read cheap',
+  java:   '    // static route: no SQL, no cache - open() hands back a channel, not rows',
+  csharp: '  // static route: no query, no cache - File.Open returns a handle, the read is lazy',
+};
+function serverFix(lines, lang, d){
+  if (!d.nodb) return lines;
+  return lines.map(ln => ln.k === 's.db' ? L('s.db', DBLINES[lang]) : ln);
+}
+/* ============================================================
+   UI state + playback
+   ============================================================ */
+const el = id => document.getElementById(id);
+const state = { si:0, api:'rest', cl:'python', sv:'js', speed:1, notes:true, cur:-1, playing:false, timer:null, steps:[], clLines:[], svLines:[] };
+
+function chipGroup(host, items, cls){
+  host.innerHTML = ''; host._items = items;
+  items.forEach(it => {
+    const b = document.createElement('button');
+    b.innerHTML = it.label; b.dataset.v = it.v;
+    if (it.v === state[cls]) b.classList.add('on');
+    b.onclick = () => { state[cls] = it.v; regen(); };
+    host.appendChild(b);
+  });
+}
+function refreshChips(){
+  el('exSel').value = SCEN[state.si].id;
+  [['clLangBtns','cl'],['apiBtns','api'],['svLangBtns','sv']].forEach(([id, key]) => {
+    const host = el(id);
+    host.querySelectorAll('[data-v]').forEach(b => {
+      if (b.dataset.v === state[key]) b.classList.add('on'); else b.classList.remove('on');
+    });
+  });
+}
+function initChips(){
+  const ex = el('exSel');
+  ex.innerHTML = '';
+  SCEN.forEach(sc => {
+    const o = document.createElement('option');
+    o.value = sc.id; o.textContent = sc.title; ex.appendChild(o);
+  });
+  ex.value = SCEN[state.si].id;
+  ex.onchange = () => { state.si = SCEN.findIndex(sc => sc.id === ex.value); regen(); };
+  const langs = Object.entries(LANGS).map(([v, l]) => ({ v, label:l.name }));
+  const apis = Object.entries(API_NAME).map(([v, l]) => ({ v, label:l }));
+  chipGroup(el('clLangBtns'), langs, 'cl');
+  chipGroup(el('apiBtns'), apis, 'api');
+  chipGroup(el('svLangBtns'), langs, 'sv');
+}
+function regen(){
+  stop();
+  const sc = SCEN[state.si];
+  const d = resolve(sc, state.api);
+  state.d = d;
+  state.clLines = sinkFix(CLIENT[state.cl](d).filter(x => x && typeof x.t === 'string'), state.cl, d);
+  state.svLines = serverFix(SERVER[state.sv](d).filter(x => x && typeof x.t === 'string'), state.sv, d);
+  const built = buildSteps(state.clLines, state.svLines, d);
+  state.steps = built.steps; state.cur = -1;
+  refreshChips(); renderCode(); renderTop(); renderTrace(); setActive();
+}
+function renderCode(){
+  const mk = (lines, lang) => lines.map((ln, i) =>
+    '<div class=ln data-line=' + i + '><span class=num>' + (i+1) + '</span><span class=src>' + hl(ln.t, lang) + '</span></div>').join('');
+  el('codeCli').innerHTML = mk(state.clLines, state.cl);
+  el('codeSrv').innerHTML = mk(state.svLines, state.sv);
+}
+function renderTop(){
+  const sc = SCEN[state.si], d = state.d;
+  el('desc').innerHTML = '<b>' + sc.title + '</b> \u2014 ' + esc(sc.blurb) +
+    '   <span class=api>' + API_NOTE[state.api] + '</span>';
+  el('clProto').textContent = API_NAME[state.api];
+  el('clLib').textContent = LANGS[state.cl].clib;
+  el('svStack').textContent = LANGS[state.sv].sstk;
+  const pair = state.api !== (sc.api0 || 'rest');
+  const odd = state.api === 'ws' ? 'no request/response here: the server pushes frames on one open socket'
+    : state.api === 'grpc' ? 'protobuf messages over HTTP/2 frames, not JSON'
+    : state.api === 'graphql' ? 'the client writes the document; the server validates it'
+    : 'this scenario normally rides plain HTTP';
+  const payload = d.kind === 'bytes' ? bytesOf(d.size) + ' binary' : d.kind === 'stream' ? d.count + ' × ' + bytesOf(d.chunkSize) : d.kind === 'frames' ? d.count + ' messages' : d.size + ' bytes JSON';
+  el('chips').innerHTML =
+    '<span class=chip>client <b>' + LANGS[state.cl].name + '</b></span>' +
+    '<span class=chip>server <b>' + LANGS[state.sv].name + '</b></span>' +
+    '<span class=chip>API type <b>' + API_NAME[state.api] + '</b></span>' +
+    '<span class=chip>payload <b>' + payload + '</b></span>' +
+    (pair ? '<span class=chip warn>unusual pairing <b>' + odd + '</b></span>' : '');
+}
+function renderTrace(){
+  const t = el('trace');
+  const N = state.steps.length;
+  if (state.cur < 0){
+    t.innerHTML = '<div class="row wire"><span class=t>&ndash;</span><span class=b>READY</span><span class=m>' +
+      N + ' steps · client ' + LANGS[state.cl].name + ' (' + LANGS[state.cl].clib + ') · server ' + LANGS[state.sv].name + ' (' + LANGS[state.sv].sstk + ') · ' + API_NAME[state.api] +
+      '\npress Run (or space). Right/left panes show the code that is running; the highlighted line is the one executing.</span></div>';
+    el('trStat').textContent = 'step 0/' + N;
+    return;
+  }
+  const done = state.cur >= N - 1;
+  let html = '';
+  for (let i = 0; i <= state.cur; i++){
+    const s = state.steps[i];
+    const tr = s.side === 'wire' ? { m:s.short, w:s.txt, note:null } : traceMsg(s.k, state.d, s.i, s.n);
+    const badge = s.side === 'wire' ? 'WIRE' : s.side === 'client' ? 'CLIENT' : 'SERVER';
+    const where = s.line != null ? '  ·  ' + (s.side === 'client' ? 'client' : 'server') + ' line ' + (s.line + 1) : '';
+    html += '<div class="row ' + s.side + (i === state.cur ? ' cur' : '') + '">' +
+      '<span class=t>' + (s.t/1000).toFixed(3) + '</span>' +
+      '<span class=b>' + badge + '</span>' +
+      '<span class=m>' + esc(tr.m) + where + (s.line != null ? '\n' + esc(s.txt) : '') + '</span></div>';
+    if (tr.w) html += '<div class=wireblk>' + esc(tr.w) + '</div>';
+    const repeat = i > 0 && state.steps[i-1].k === s.k && s.k;
+    if (state.notes && tr.note && !repeat) html += '<div class=noteblk>' + esc(tr.note) + '</div>';
+  }
+  if (done){
+    const last = state.steps[N-1], d = state.d;
+    html += '<div class="row wire"><span class=t>' + (last.t/1000).toFixed(3) + '</span><span class=b>DONE</span><span class=m>' +
+      N + ' steps · ' + (last.t/1000).toFixed(3) + 's simulated · status ' + d.status + ' · ' + d.ctype + ' · ' +
+      (d.kind === 'stream' ? bytesOf(d.size) + ' in ' + d.count + ' chunks' : d.kind === 'bytes' ? bytesOf(d.size) + ' binary' : d.kind === 'frames' ? d.count + ' frames on one socket' : d.size + ' bytes') +
+      ' · ' + (d.dbSql ? 'db ' + d.dbMs + 'ms' : 'cache hit') + '</span></div>';
+  }
+  t.innerHTML = html;
+  t.scrollTop = t.scrollHeight;
+  el('trStat').textContent = 'step ' + (state.cur + 1) + '/' + N + '  ' + Math.round((state.cur + 1) / N * 100) + '%';
+}
+function setActive(){
+  document.querySelectorAll('.ln.cur').forEach(n => n.classList.remove('cur'));
+  el('paneCli').classList.remove('dimmed'); el('paneSrv').classList.remove('dimmed');
+  el('pos').textContent = '';
+  const s = state.steps[state.cur];
+  if (!s) return;
+  if (s.side === 'wire'){ el('pos').textContent = 'on the wire: no code running, bytes in flight'; return; }
+  const box = s.side === 'client' ? el('codeCli') : el('codeSrv');
+  el(s.side === 'client' ? 'paneSrv' : 'paneCli').classList.add('dimmed');
+  const node = box.querySelector('[data-line="' + s.line + '"]');
+  if (node){
+    node.classList.add('cur');
+    const want = node.offsetTop - box.clientHeight / 2;
+    box.scrollTop = Math.max(0, Math.min(want, Math.max(0, box.scrollHeight - box.clientHeight)));
+  }
+  el('pos').textContent = (s.side === 'client' ? 'client line ' : 'server line ') + (s.line + 1);
+}
+function speedMs(){ return state.speed <= 0 ? 0 : Math.round(700 / state.speed); }
+function advance(){
+  if (state.cur >= state.steps.length - 1) return false;
+  state.cur++; renderTrace(); setActive();
+  return true;
+}
+function tick(){
+  if (!state.playing) return;
+  if (!advance()){
+    state.playing = false; el('runBtn').classList.remove('playing');
+    const last = state.steps[state.steps.length - 1];
+    el('stat').textContent = 'finished: ' + state.steps.length + ' steps, ' + (last.t/1000).toFixed(2) + 's simulated';
+    return;
+  }
+  const sp = speedMs();
+  if (sp > 0) state.timer = setTimeout(tick, sp); else tick();
+}
+function play(){
+  if (state.playing) return;
+  if (state.cur >= state.steps.length - 1){ state.cur = -1; renderTrace(); setActive(); }
+  state.playing = true; el('runBtn').classList.add('playing'); el('stat').textContent = 'running...';
+  tick();
+}
+function stop(){ state.playing = false; clearTimeout(state.timer); el('runBtn').classList.remove('playing'); }
+
+el('runBtn').onclick = () => play();
+el('nextBtn').onclick = () => { stop(); advance(); };
+el('prevBtn').onclick = () => { stop(); state.cur = Math.max(-1, state.cur - 1); renderTrace(); setActive(); };
+el('resetBtn').onclick = () => { stop(); state.cur = -1; renderTrace(); setActive(); el('stat').textContent = 'reset — pick another language, API type or scenario and press Run'; };
+const SPEEDS = [{ v:1, l:'normal' }, { v:0.35, l:'slow' }, { v:2.5, l:'fast' }, { v:0, l:'instant' }];
+el('speedBtn').onclick = () => {
+  const i = SPEEDS.findIndex(s => s.v === state.speed);
+  const nx = SPEEDS[(i + 1) % SPEEDS.length];
+  state.speed = nx.v; el('speedBtn').textContent = 'Speed: ' + nx.l;
+  if (nx.v === 0){ stop(); state.cur = state.steps.length - 1; renderTrace(); setActive(); el('stat').textContent = 'all ' + state.steps.length + ' steps shown at once'; }
+  else if (state.playing){ clearTimeout(state.timer); tick(); }
+};
+el('noteBtn').onclick = () => { state.notes = !state.notes; el('noteBtn').textContent = 'Explanations: ' + (state.notes ? 'on' : 'off'); renderTrace(); };
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === ' '){ ev.preventDefault(); play(); }
+  else if (ev.key === 'ArrowRight'){ ev.preventDefault(); el('nextBtn').onclick(); }
+  else if (ev.key === 'ArrowLeft'){ ev.preventDefault(); el('prevBtn').onclick(); }
+  else if (ev.key === 'r'){ ev.preventDefault(); regen(); }
+});
+initChips();
+regen();
+el('stat').textContent = 'pick a scenario, then press Run';
+</script>
+</body>
+</html>
