@@ -68,7 +68,7 @@ surprises).
    set `--c1`/`--c2` (the colour strip), and rewrite the title, blurb, `<ul class="facts">` and pills. A
    commented template marker sits above the grid.
 3. Move the matching card out of the *Planned* grid, and add a row to the table above.
-4. The tutorial page links back with `<a class="back" href="./">← all projects</a>`, and sideways to its
+4. The tutorial page links back with `<a class="back" href="index.html">← all projects</a>`, and sideways to its
    sibling sandbox in the same `<span class="links">`.
 
 If the new page steps through code, take the step engine rather than rewriting it: copy the block between
