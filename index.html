@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="AI-tutor: a series of interactive, self-contained tutorials that run entirely in the browser. Start with the API Learning Sandbox — watch one API call travel through client code, the wire, and server code.">
+<meta name="description" content="AI-tutor: interactive, self-contained tutorials that run entirely in the browser. The API Learning Sandbox walks one API call through client code, the wire and server code; the MCP Learning Sandbox does the same for a Model Context Protocol tool call.">
 <meta name="theme-color" content="#0c1017">
 <meta property="og:type" content="website">
 <meta property="og:title" content="AI-tutor — interactive tutorials in the browser">
-<meta property="og:description" content="Self-contained, AI-built tutorials you run in the browser: no install, no account, no server. Featuring the API Learning Sandbox.">
+<meta property="og:description" content="Self-contained, AI-built tutorials you run in the browser: no install, no account, no server. Now: the API Learning Sandbox and the MCP Learning Sandbox.">
 <meta property="og:url" content="https://ssam-git.github.io/AI-tutor/">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c1017'/%3E%3Cpath d='M6 11h9M6 16h13M6 21h7' stroke='%2357c8ff' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M20 8l5 5-5 5' fill='none' stroke='%23ffc861' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <title>AI-tutor — interactive tutorials in the browser</title>
@@ -108,12 +108,13 @@ footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);display
   </div>
   <nav class="links" aria-label="site links">
     <a class="btn primary" href="api-learning.html">Open the API sandbox →</a>
+    <a class="btn" href="mcp-learning.html">Open the MCP sandbox →</a>
     <a class="btn" href="https://github.com/ssam-git/AI-tutor">Source on GitHub</a>
   </nav>
 </header>
 
 <main id="projects">
-  <h2>Projects <span class="count">— 1 live</span></h2>
+  <h2>Projects <span class="count">— 2 live</span></h2>
   <div class="grid">
 
     <!-- ==== to add a project: copy one <a class="card"> block, point href at the new .html file, ==== -->
@@ -139,6 +140,31 @@ footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);display
         <span class="pill">no network calls</span>
       </span>
       <span class="go">Open the sandbox →</span>
+    </a>
+
+    <a class="card" href="mcp-learning.html" style="--c1:#4f8cff;--c2:#ffc861">
+      <span class="status">live</span>
+      <h3>MCP Learning Sandbox</h3>
+      <p>Same console, new protocol. Watch one tool call travel through <b>the model → the MCP client →
+        JSON-RPC 2.0 on a transport → the MCP server → back</b>, and switch the protocol revision to watch
+        the start of the conversation change shape.</p>
+      <ul class="facts">
+        <li><b>3 protocol revisions</b> side by side: 2025-03-26, 2025-11-25 and the current 2026-07-28 — the
+          <code>initialize</code> handshake, the session id and server-initiated elicitations all appear and disappear</li>
+        <li><b>2 transports</b>: stdio (child process, one JSON line per message) vs Streamable HTTP
+          (<code>Mcp-Method</code> headers, no session id)</li>
+        <li><b>4 scenarios</b>: cold start (<code>server/discover</code> + <code>tools/list</code>), a tool call,
+          tool failure vs protocol failure, and a server that has to ask a human before it acts</li>
+        <li><b>Real message shapes</b>: <code>isError</code> vs a JSON-RPC error, <code>structuredContent</code>,
+          and <code>input_required</code> retried with <code>requestState</code> + <code>inputResponses</code></li>
+        <li>Server in Python (FastMCP) or the TypeScript SDK; the client side is TypeScript</li>
+      </ul>
+      <span class="meta">
+        <span class="pill num">4 scenarios</span><span class="pill num">3 revisions</span>
+        <span class="pill num">2 transports</span><span class="pill">shares the API sandbox engine</span>
+        <span class="pill">no network calls</span>
+      </span>
+      <span class="go">Open the MCP sandbox →</span>
     </a>
 
   </div>
@@ -174,6 +200,8 @@ footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);display
     dependencies, no analytics, no network requests. They are written with an AI assistant and then reviewed
     and fixed by hand, which is why each one fits in a single file you can read top to bottom and save to
     your desktop. Serving them is just static files: push to <code>main</code> and GitHub Pages republishes.
+    The two sandboxes share one step engine: the block is copied into each file, and
+    <code>dev/check-shared.js</code> fails if the two copies drift apart.
   </div>
 </main>
 

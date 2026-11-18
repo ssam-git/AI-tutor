@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Interactive, in-browser simulator that shows one MCP tool call travelling through the host app, the MCP client, JSON-RPC messages on a transport, and the MCP server. Compare the 2025-03-26, 2025-11-25 and 2026-07-28 protocol revisions side by side.">
+<meta name="theme-color" content="#0c1017">
+<meta property="og:type" content="website">
+<meta property="og:title" content="MCP Learning Sandbox — host / client / transport / server simulator">
+<meta property="og:description" content="Watch one tool call travel: model → MCP client → JSON-RPC 2.0 → MCP server → back. Compare protocol revisions, stdio vs Streamable HTTP. Runs entirely in your browser.">
+<meta property="og:url" content="https://ssam-git.github.io/AI-tutor/mcp-learning.html">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c1017'/%3E%3Cpath d='M7 9h7v14H7zM18 9h7v14h-7z' fill='none' stroke='%2357c8ff' stroke-width='2'/%3E%3Cpath d='M14 16h4' stroke='%23ffc861' stroke-width='2.4' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='16' r='1.6' fill='%23ffc861'/%3E%3C/svg%3E">
+<title>MCP Learning Sandbox — host / client / transport / server simulator</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0c1017; --pane:#141a24; --pane2:#1a222e; --line:#26303d;
+  --tx:#d5deea; --dim:#7f8b9c; --client:#57c8ff; --server:#68e08c; --wire:#ffc861;
+  --hi:#ffb445; --hi-bg:rgba(255,180,69,.16); --accent:#4f8cff;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+html{overscroll-behavior:none}
+body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:grid;grid-template-rows:auto minmax(0,1fr) minmax(110px,25vh);gap:8px;overflow:hidden;
+  height:100vh;height:100dvh;
+  padding:calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left))}
+.mono{font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;font-size:12.5px;line-height:1.6}
+#runRow button{display:inline-flex;align-items:center;justify-content:center;gap:.45em}
+.ic{width:15px;height:15px;flex:0 0 auto;fill:currentColor;shape-rendering:geometricPrecision}
+#runBtn .ic{width:17px;height:17px}
+button,select{font:inherit;color:var(--tx);background:var(--pane2);border:1px solid var(--line);border-radius:6px;
+  padding:5px 9px;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+button.on,select.on{background:#23384f;border-color:var(--accent);color:#fff}
+button:hover{border-color:#3c4b5e}
+h1{font-size:15px;margin:0;font-weight:650}
+h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
+
+/* ---------- top pane ---------- */
+#top{background:var(--pane);border:1px solid var(--line);border-radius:9px;padding:8px 11px;
+  display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:start}
+.pick{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:6px}
+.pick label{font-size:11px;color:var(--dim)}
+.pick select{min-width:21ch;text-align:left}
+.back{font-size:11.5px;color:var(--dim);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:4px 8px;white-space:nowrap}
+.back:hover{color:var(--tx);border-color:#3c4b5e}
+#topRow .links{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+#topRow{display:flex;gap:14px;align-items:baseline;justify-content:space-between}
+#about{margin-top:2px}
+#about>summary{display:none}
+#desc{margin:.35em 0 0}
+.hint{margin:.4em 0 0}
+#desc{font-size:11.5px;color:var(--dim);line-height:1.45;max-width:130ch}
+#desc b{color:var(--tx);font-weight:600}
+#desc .api{color:var(--wire)}
+#runCol{display:flex;flex-direction:column;gap:7px;align-items:flex-end}
+#runRow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:end}
+#runBtn{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700;padding:7px 14px;font-size:14px}
+#runBtn.playing{background:#1f6f3a;border-color:#2f9c53}
+#stat{font-size:11.5px;color:var(--dim)}
+#chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11px;padding:3px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+.chip b{color:var(--tx)}
+.chip.warn{border-color:#8a6a1f;color:#e6c07a;background:rgba(255,180,69,.08)}
+
+/* ---------- middle row ---------- */
+#mid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;min-height:0}
+.pane{background:var(--pane);border:1px solid var(--line);border-radius:9px;display:flex;flex-direction:column;min-height:0}
+.pane>header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 10px;border-bottom:1px solid var(--line);
+  background:var(--pane2);border-radius:9px 9px 0 0}
+.pane>header .who{font-weight:700;font-size:13px}
+.pane.client>header .who{color:var(--client)}
+.pane.server>header .who{color:var(--server)}
+.pane>header .meta{font-size:11px;color:var(--dim)}
+.pane>header .meta b{color:var(--tx)}
+.pane>header #pos{margin-left:auto;font-size:11px;color:var(--wire)}
+.pane>header .sel{display:flex;gap:4px;align-items:center;font-size:11px;color:var(--dim)}
+.pane>header .sel span{font-size:11px;padding:3px 6px}
+#codeCli,#codeSrv{overflow:auto;padding:8px 10px;min-height:0;flex:1;position:relative}
+.hint{font-size:11px;color:var(--dim);margin:.4em 0 0}
+.ln{display:grid;grid-template-columns:2.6em 1fr;gap:0;white-space:pre}
+.ln>.num{color:#4b5766;text-align:right;padding-right:.7em;border-right:1px solid transparent}
+.ln>.src{white-space:pre;padding-left:.7em}
+.ln.cur{background:var(--hi-bg)}
+.ln.cur>.num{color:var(--hi);border-right-color:var(--hi)}
+.pane.dimmed #codeCli,.pane.dimmed #codeSrv{opacity:.45;transition:opacity .25s}
+.tk-c{color:#6c7a8d;font-style:italic}
+.tk-s{color:#e8a06a}
+.tk-k{color:#c58ae6}
+.tk-n{color:#8ec7ff}
+.tk-a{color:#68e08c}
+.tk-p{color:#69d2c8}
+.tk-t{color:#8b98ac}
+
+/* ---------- bottom pane ---------- */
+#bot{background:var(--pane);border:1px solid var(--line);border-radius:9px;display:flex;flex-direction:column;min-height:0}
+#bot>header{padding:5px 10px}
+#bot>header{display:flex;gap:10px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--line);background:var(--pane2);border-radius:9px 9px 0 0}
+#bot>header .who{font-weight:700;font-size:13px}
+#bot>header .legend{margin-left:auto;display:flex;gap:10px;font-size:10.5px;color:var(--dim)}
+#bot>header .legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+#trace{flex:1;overflow:auto;padding:6px 10px;min-height:0;font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
+  font-size:11.5px;line-height:1.4}
+.row{display:grid;grid-template-columns:4.6em 5em 1fr;gap:.4em;animation:fade .3s;padding:.05em 0}
+.row .t{color:#4b5766;text-align:right}
+.row .b{font-weight:700;font-size:11px;letter-spacing:.02em}
+.row .m{white-space:pre-wrap}
+.row .m em{color:var(--dim);font-style:normal}
+.row.client .b{color:var(--client)} .row.wire .b{color:var(--wire)} .row.server .b{color:var(--server)}
+.row.cur .m{color:#fff}
+.row.cur .b{color:var(--hi)}
+.wireblk,.noteblk{margin:.05em 0 .2em 10.4em;padding:.2em .45em;border-left:2px solid var(--line);white-space:pre-wrap;font-size:11px}
+.wireblk{color:#c8b489;background:rgba(255,200,97,.06);border-left-color:#5d4b22}
+.noteblk{color:#93a2b6;background:rgba(80,140,255,.05);border-left-color:#2b3b52;font-style:italic}
+.noteblk.hide{display:none}
+@keyframes fade{from{opacity:0;transform:translateY(2px)}to{opacity:1}}
+/* ---------- panel tabs (mobile only) ---------- */
+#tabs{display:none;gap:6px;align-items:stretch}
+#tabs button{flex:1 1 0;min-width:0}
+#tabs #followBtn{flex:0 0 auto;font-size:11px;padding:0 10px}
+
+/* ---------- coarse pointers: big enough to tap ---------- */
+@media (pointer:coarse){
+  button,select{min-height:40px;padding:8px 11px}
+  select{font-size:16px}          /* keeps iOS Safari from zooming on focus */
+  .pane>header .sel button{min-height:34px;padding:6px 9px}
+  .back{display:inline-flex;align-items:center;min-height:34px}
+  #tabs #followBtn{min-height:34px}
+}
+
+/* ---------- narrow screens: one panel at a time ---------- */
+@media (max-width:860px){
+  body{grid-template-rows:auto auto minmax(0,1fr);gap:6px}
+  #top{grid-template-columns:minmax(0,1fr);gap:8px}
+  #topRow{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+  #topRow h1{min-width:0}
+  h1{font-size:14px}
+  h1 small{display:block;margin-top:3px;font-size:11px}
+  #about>summary{display:list-item;cursor:pointer;font-size:11.5px;color:var(--dim);padding:6px 0;min-height:34px}
+  #about>summary:hover{color:var(--tx)}
+  #about[open]>summary{color:var(--tx)}
+  .pick{margin-top:0}
+  .pick select{flex:1 1 auto;min-width:0;font-size:16px}
+  #runCol{align-items:stretch}
+  #runRow{justify-content:stretch}
+  #runRow button{flex:1 1 auto;min-height:42px;padding:6px 8px;font-size:12px}
+  #runBtn{flex:1 1 100%;min-height:46px;font-size:15px}
+  /* the chips repeat what the panel headers already say; keep only warnings */
+  #chips .chip{display:none}
+  #chips .chip.warn{display:inline-flex}
+  #tabs{display:flex}
+  #tabs button{min-height:40px}
+  #mid{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+  #mid .pane,#bot{display:none}
+  body[data-view=trace] #mid{display:none}
+  body[data-view=cli] #paneCli,body[data-view=srv] #paneSrv,body[data-view=trace] #bot{display:flex}
+  .pane>header{gap:4px 8px;padding:6px 8px}
+  .pane>header .who{font-size:12.5px}
+  .pane>header .sel{flex:1 1 100%;flex-wrap:wrap;gap:4px}
+  .pane>header .meta{font-size:11px}
+  #pos{font-size:11px}
+  #codeCli,#codeSrv{padding:6px 8px}
+  .ln{white-space:pre-wrap}
+  .ln>.src{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
+  #trace{font-size:12px;padding:6px 8px}
+  #bot>header .legend{display:none}
+  .chip{font-size:10.5px}
+  .row{grid-template-columns:4.2em 4.4em minmax(0,1fr);gap:.3em}
+  .wireblk,.noteblk{margin-left:1.1em}
+}
+
+/* ---------- short screens (small phones, portrait): shed chrome ---------- */
+@media (max-width:860px) and (max-height:700px){
+  body{gap:5px}
+  #top{gap:6px}
+  #runRow{gap:5px}
+  h1 small{display:none}
+  h1{font-size:13.5px}
+  #about>summary{min-height:28px;padding:3px 0;font-size:11px}
+  .pick select{min-height:38px}
+  #runRow button{min-height:40px;padding:5px 7px;font-size:11.5px}
+  #runBtn{min-height:44px;font-size:14px}
+  #tabs button{min-height:38px;font-size:12.5px}
+  #stat{font-size:11px}
+}
+
+/* ---------- short screens: shrink the panel header, then shed chrome ---------- */
+@media (max-width:860px) and (max-height:620px){
+  .pane>header{padding:4px 8px;gap:3px 6px}
+  .pane>header .who{font-size:12px}
+  .pane>header .sel{flex:1 1 auto;flex-wrap:wrap;gap:3px}
+  .pane>header .sel button{min-height:30px;padding:4px 7px;font-size:11px}
+  .pane>header .meta{display:none}
+  #runRow button{min-height:36px;padding:4px 5px;font-size:11px}
+  #runBtn{min-height:40px;font-size:13px}
+}
+
+/* ---------- landscape phones: use the width for the controls ---------- */
+@media (min-width:600px) and (max-width:860px) and (max-height:560px){
+  body{gap:4px}
+  #top{grid-template-columns:minmax(0,1fr) auto;gap:4px 12px}
+  #runCol{align-items:flex-end}
+  #runRow{flex-wrap:wrap;justify-content:flex-end;max-width:34em}
+  #runBtn{flex:0 0 5.5em;min-height:40px;font-size:13px}
+  #tabs{gap:4px}
+  #tabs button{min-height:34px;font-size:12px}
+}
+@media (prefers-reduced-motion:reduce){
+  .row{animation:none}
+  .pane.dimmed #codeCli,.pane.dimmed #codeSrv{transition:none}
+}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <div>
+    <div id="topRow">
+      <h1>MCP Learning Sandbox <small>watch one tool call travel: model &#8594; MCP client &#8594; JSON-RPC 2.0 &#8594; MCP server &#8594; back</small></h1>
+      <span class="links">
+        <a class="back" href="api-learning.html" title="the other sandbox: same console, different protocol">API sandbox &rarr;</a>
+      <a class="back" href="./" title="more AI-built tutorials">&larr; all projects</a>
+      </span>
+    </div>
+    <div class="pick">
+      <label for="exSel">Scenario</label><select id="exSel" title="pick a scenario"></select>
+      <label for="revSel">Protocol revision</label><select id="revSel" title="which protocol revision to simulate"></select>
+    </div>
+    <details id="about" open>
+      <summary>About this scenario</summary>
+      <p id="desc"></p>
+      <p class="hint">space = run / pause &nbsp;&middot;&nbsp; the two buttons after Run step one line forward / back (or &rarr; and &larr;) &nbsp;&middot;&nbsp; Explanations toggles the italic notes &nbsp;&middot;&nbsp; R = rebuild after changing any selector &nbsp;&middot;&nbsp; on a phone, swipe left / right between Client, Server and Trace.
+      Nothing here talks to the network: the frames are built in your browser from the shapes the specification publishes.</p>
+    </details>
+  </div>
+  <div id="runCol">
+    <div id="runRow">
+      <button id="runBtn" title="run to the end"><svg class=ic viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 2.6 13 8l-8.8 5.4z"/></svg><span>Run</span></button>
+      <button id="prevBtn" title="step back" aria-label="step back"><svg class=ic viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="2.3" height="10" rx="1.15"/><path d="M13 3 6.4 8 13 13z"/></svg></button>
+      <button id="nextBtn" title="step forward" aria-label="step forward"><svg class=ic viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3 9.6 8 3 13z"/><rect x="10.7" y="3" width="2.3" height="10" rx="1.15"/></svg></button>
+      <button id="resetBtn">Reset</button>
+      <button id="speedBtn" title="speed">Speed: normal</button>
+      <button id="noteBtn" title="explanations">Explanations: on</button>
+    </div>
+    <div id="stat"></div>
+    <div id="chips"></div>
+  </div>
+</div>
+
+<div id="tabs" role="tablist" aria-label="Which panel to show">
+  <button type="button" role="tab" data-view="cli" aria-selected="false">Client code</button>
+  <button type="button" role="tab" data-view="srv" aria-selected="false">Server code</button>
+  <button type="button" role="tab" data-view="trace" aria-selected="false">Trace</button>
+  <button type="button" id="followBtn" title="switch to whichever code panel is running">Follow: on</button>
+</div>
+
+<div id="mid">
+  <div class="pane client" id="paneCli">
+    <header>
+      <span class="who">MCP CLIENT (the host app and its model)</span>
+      <span class="meta">client: <b id="clName">&ndash;</b></span>
+      <span id="pos"></span>
+    </header>
+    <div id="codeCli"></div>
+  </div>
+  <div class="pane server" id="paneSrv">
+    <header>
+      <span class="who">MCP SERVER (the tool provider)</span>
+      <span class="sel">Transport: <span id="trBtns"></span></span>
+      <span class="sel">Language: <span id="svBtns"></span></span>
+      <span class="meta">revision: <b id="revName">&ndash;</b></span>
+    </header>
+    <div id="codeSrv"></div>
+  </div>
+</div>
+
+<div id="bot">
+  <header>
+    <span class="who">JSON-RPC 2.0 MESSAGE TRACE</span>
+    <span id="trStat"></span>
+    <span class="legend">
+      <span><i style="background:var(--client)"></i>client code</span>
+      <span><i style="background:var(--wire)"></i>message on the transport</span>
+      <span><i style="background:var(--server)"></i>server code</span>
+    </span>
+  </header>
+  <div id="trace"></div>
+</div>
+
+<script>
+/* ============================================================
+   MCP Learning Sandbox. Same engine as api-learning.html (the
+   ENGINE block below is shared verbatim); everything else is
+   MCP-specific data. Protocol shapes follow the 2026-07-28
+   revision, with the older revisions kept for comparison.
+   Nothing here talks to the network.
+   ============================================================ */
+const HOST = 'mcp.acme.dev';
+const esc = s => String(s);
+const bytesOf = n => n >= 1048576 ? +((n/1048576).toFixed(2)) + ' MiB' : n >= 1024 ? +((n/1024).toFixed(1)) + ' KiB' : n + ' B';
+
+const SCEN = [
+  { id:'discover', title:'Cold start: discover + tools/list',
+    blurb:'The client connects and asks what this server can do. Switch the protocol revision and watch the start of the conversation change: 2025-11-25 opens with an initialize handshake, a notifications/initialized notification and (over HTTP) a Mcp-Session-Id; 2026-07-28 has none of those — the server just answers server/discover, and every later request carries its own version in _meta.' },
+  { id:'call', title:'Tool call: the model picks a tool',
+    blurb:'Three separate parties: the host (this app) owns the model, the client owns one connection per server, the server owns the tool. The tool\'s JSON Schema goes into a model request, the model returns a name and arguments, and the client turns that into tools/call. The arguments are model output, so the server validates them again on its side.' },
+  { id:'error', title:'Tool failure vs protocol failure',
+    blurb:'Two failures that look alike and are not. isError:true is a normal result: the transport is fine, the JSON-RPC call succeeded, and the model reads the text and decides what to do. A JSON-RPC error means the request itself was bad: the client SDK throws, and the model never hears about it. Watch both in one run.' },
+  { id:'mrtr', title:'Server needs input before it acts',
+    blurb:'The server must ask a human before sending a message — and how it asks depends entirely on the revision you pick. 2026-07-28: the server answers with resultType "input_required" plus a requestState blob, and the client re-issues the same call with inputResponses (a new request id). 2025-11-25: the server sends a request backwards (elicitation/create) while the original call is still open. 2025-03-26: there is no way to ask, so the server can only refuse.' },
+];
+
+const TRANS = {
+  http:  { name:'Streamable HTTP', note:'one POST per request, response body or SSE stream' },
+  stdio: { name:'stdio', note:'child process, one JSON line per message, no port and no auth' },
+};
+
+const REVS = {
+  '2026-07-28': { name:'2026-07-28', stateless:true, mrtr:'mrtr',      note:'current: no handshake, no session id, multi round-trip requests' },
+  '2025-11-25': { name:'2025-11-25', stateless:false, mrtr:'back-req', note:'handshake + sessions; the server can send requests back to the client' },
+  '2025-03-26': { name:'2025-03-26', stateless:false, mrtr:'none',     note:'handshake + sessions; no elicitation, no structured tool output' },
+};
+
+const SVLANGS = { python:'Python \u00b7 FastMCP', js:'TypeScript SDK' };
+const CLNAME  = 'TypeScript SDK';
+
+/* ============================================================
+   resolve(scenario) -> descriptor the generators and the trace read
+   ============================================================ */
+function resolve(sc){
+  const d = { sc:sc.id, scenario:sc, tr:state.tr, rev:state.rev, R:REVS[state.rev], host:HOST, sv:state.sv };
+  d.bytes = 0; d.msgCount = 0;        // filled by wireEvents: what actually travelled
+  return d;
+}
+
+/* ============================================================
+   CLIENT code (one language: the TypeScript SDK)
+   ============================================================ */
+function client(d){
+  const L = [];
+  const add = (t, k) => L.push({ t, k });
+  const nl  = () => L.push({ t:'', k:null });
+  const cmt = t => L.push({ t, k:null });
+
+  cmt('// three parties, one file: the HOST app owns the model, the MCP');
+  cmt('// CLIENT owns exactly one connection per server, the SERVER owns the tool.');
+  add('import { Client } from "@modelcontextprotocol/sdk/client/index.js";');
+  if (d.tr === 'http')
+    add('import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";');
+  else
+    add('import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";');
+  nl();
+  if (d.tr === 'http'){
+    add('const tr = new StreamableHTTPClientTransport(', 'c.setup');
+    add('  new URL("https://mcp.acme.dev/mcp"));', null);
+  } else {
+    add('const tr = new StdioClientTransport(', 'c.setup');
+    add('  { command: "uv", args: ["run", "server.py"] });', null);
+  }
+  add('const client = new Client({ name: "notes-app", version: "1.4.0" },', 'c.setup');
+  if (d.R.mrtr === 'none')
+    add('                         { capabilities: { roots: { listChanged: true } } });', null);
+  else
+    add('                         { capabilities: { elicitation: {} } });', null);
+  if (d.R.mrtr === 'back-req')
+    cmt('// connect(): initialize -> wait for the answer -> notifications/initialized');
+  else if (d.R.stateless)
+    cmt('// connect(): no handshake at all in 2026-07-28 — it just opens the transport');
+  else
+    cmt('// connect(): initialize handshake; this revision has no elicitation');
+  add('await client.connect(tr);', 'c.connect');
+  nl();
+  add('const { tools } = await client.listTools();', 'c.list');
+  cmt('// the model only ever sees name + description + inputSchema of each tool');
+  if (d.sc !== 'discover'){     // cold-start scenario stops after the tool list
+  add('const msgs = [{ role: "user",', null);
+  add('                   content: ' + JSON.stringify(ASK[d.sc]) + ' }];', null);
+  if (d.sc === 'mrtr' && d.R.mrtr === 'back-req'){
+    nl();
+    cmt('// 2025-11-25: the server can send a request back the other way');
+    add('import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";');
+    add('client.setRequestHandler(ElicitRequestSchema, async (req) =>', 'c.elicit');
+    add('  ({ action: "accept",', null);
+    add('     content: { confirmed: await ui.confirm(req.params.message) } }));', null);
+  }
+  nl();
+  add('let turn = await llm.chat(msgs, tools);      // your model, not MCP', 'c.decide');
+  nl();
+  if (d.sc === 'error'){
+    add('const bad = await client.callTool({ name: "weather",', 'c.call');
+    add('                                arguments: { city: "Nowhereville" } });', null);
+    nl();
+    cmt('// the tool failed, but the call succeeded: isError is data the model reads');
+    add('if (bad.isError) msgs.push({ role: "tool", content: bad.content[0].text });', 'c.result');
+    add('turn = await llm.chat(msgs, tools);        // the model decides what to do next', 'c.answer');
+    nl();
+    cmt('// now a request the server rejects outright: a JSON-RPC error, not a tool result');
+    add('try {', null);
+    add('  await client.callTool({ name: "weather2", arguments: {} });', 'c.call2');
+    add('} catch (e) {                              // the SDK throws; the model never sees it', 'c.err');
+    add('  console.error("protocol error:", e.code, e.message);', null);
+    add('}', null);
+  } else if (d.sc === 'mrtr'){
+    add('let r = await client.callTool({ name: "send_message",', 'c.call');
+    add('                             arguments: { to: "+49 30 8874521",', null);
+    add('                                        body: "running 15 min late" } });', null);
+    if (d.R.mrtr === 'mrtr'){
+      add('if (r.resultType === "input_required") {', 'c.recv');
+      add('  const confirmed = await ui.confirm(', 'c.elicit');
+      add('      r.inputRequests.confirm.message);', null);
+      add('  r = await client.callTool({ name: "send_message", arguments,   // same params, NEW id', 'c.retry');
+      add('        requestState:   r.requestState,', null);
+      add('        inputResponses: { confirm: { action: "accept", content: { confirmed } } } });', null);
+      add('}', null);
+    } else if (d.R.mrtr === 'none'){
+      cmt('// this revision has no way for the server to ask, so it can only refuse');
+    }
+    add('msgs.push({ role: "tool", content: r.content[0].text });', 'c.result');
+    add('const answer = await llm.chat(msgs, tools);   // the model reports what happened', 'c.answer');
+  } else {
+    add('const r = await client.callTool({ name: "weather",', 'c.call');
+    add('                             arguments: { city: "Berlin", units: "metric" } });', null);
+    add('msgs.push({ role: "tool", content: r.structuredContent });', 'c.result');
+    add('const answer = await llm.chat(msgs, tools);', 'c.answer');
+    add('console.log(answer.content);', null);
+  }
+  }                                          // end of the "not cold start" block
+  nl();
+  add('await client.close();', 'c.close');
+  return L;
+}
+
+/* what the person typed into the host app; only the scenarios with a model turn use it */
+const ASK = { call:'what is the weather in Berlin?', error:'what is the weather in Nowhereville?',
+              mrtr:'text Max: running 15 min late' };
+
+/* ============================================================
+   SERVER code generators
+   ============================================================ */
+function server(d){ return d.sv === 'python' ? serverPy(d) : serverTs(d); }
+
+function serverPy(d){
+  const L = [];
+  const add = (t, k) => L.push({ t, k });
+  const nl = () => L.push({ t:'', k:null });
+  const cmt = t => L.push({ t, k:null });
+
+  add('from fastmcp import FastMCP, ToolError', 's.listen');
+  add('mcp = FastMCP("notes-tools")', 's.listen');
+  if (d.tr === 'stdio')
+    cmt('# stdio: the host already started us as a child process; we read line-delimited JSON on stdin');
+  else
+    cmt('# streamable http: uvicorn serves POST /mcp — one POST per JSON-RPC request');
+  if (d.tr === 'http' && !d.R.stateless)
+    cmt('# the first response also carries Mcp-Session-Id; older revisions require it on every later POST');
+  if (d.tr === 'http' && d.R.stateless)
+    cmt('# 2026-07-28: no session id. Headers Mcp-Method / Mcp-Name let a proxy route without parsing the body');
+  nl();
+  if (d.sc === 'mrtr' && d.R.mrtr === 'mrtr'){
+    add('@mcp.tool', 's.route');
+    add('async def send_message(to: str, body: str, ctx) -> Result:', 's.route');
+    add('    """Send an SMS to a contact."""', null);
+    add('    if ctx.request_state is None:                      # first attempt', 's.parse');
+    add('        return input_required(                          # s.input_required', 's.inputreq');
+    add('            request_id="confirm",', null);
+    add('            message=f"Send to {to}: {body}?",', null);
+    add('            requested_schema={"confirmed": {"type": "boolean", "title": "Confirm?"}})', null);
+    add('    if not ctx.input_response("confirm")["confirmed"]:  # retry, but the human said no', 's.retry');
+    add('        return Result(content=[text("not sent")])', null);
+    add('    msg_id = await sms.send(to, body)', 's.tool');
+    add('    return Result(content=[text(f"sent, id {msg_id}")],', 's.serialize');
+    add('                structured={"sent": True, "messageId": msg_id})', null);
+    return L;
+  }
+  if (d.sc === 'mrtr' && d.R.mrtr === 'back-req'){
+    add('@mcp.tool', 's.route');
+    add('async def send_message(to: str, body: str, ctx) -> Result:', 's.route');
+    add('    """Send an SMS to a contact."""', null);
+    add('    args = ctx.validate()                              # model-written arguments', 's.parse');
+    add('    answer = await ctx.elicit(                         # server-initiated: elicitation/create', 's.backreq');
+    add('        f"Send to {to}: {body}?",', null);
+    add('        {"confirmed": {"type": "boolean"}})', null);
+    add('    if not answer.confirmed:', null);
+    add('        return Result(content=[text("not sent")])', null);
+    add('    msg_id = await sms.send(to, body)', 's.tool');
+    add('    return Result(content=[text(f"sent, id {msg_id}")])', 's.serialize');
+    return L;
+  }
+  if (d.sc === 'mrtr'){
+    add('@mcp.tool', 's.route');
+    add('async def send_message(to: str, body: str) -> dict:', 's.route');
+    add('    """Send an SMS to a contact."""', null);
+    add('    if not confirmed_in_arguments(to, body):           # 2025-03-26: no elicitation exists', 's.parse');
+    add('        return {"content": [{"type": "text",', 's.err');
+    add('                  "text": "refused: this revision cannot ask the user first"}],', null);
+    add('                "isError": True}                       # the tool never runs', null);
+    nl();
+    cmt('# there is no way in this revision to pause and ask the person using the app,');
+    cmt('# so a side-effecting tool has to refuse and let the model try another way');
+    return L;
+  }
+  if (d.sc === 'error'){
+    add('@mcp.tool', 's.route');
+    add('async def weather(city: str, units: str = "metric") -> dict:', 's.route');
+    add('    """Current conditions for a city."""', null);
+    add('    if units not in ("metric", "imperial"):            # arguments come from a model', 's.parse');
+    add('        raise ToolError("units must be metric or imperial")', null);
+    add('    row = await upstream.get(city)                     # unknown city -> upstream 503', 's.db');
+    add('    return {"content": [{"type": "text",', 's.err');
+    add('              "text": "upstream weather API returned 503"}],', null);
+    add('            "isError": True}                           # still a normal JSON-RPC result', null);
+    nl();
+    add('# a name that is not a tool never reaches the handler above: the dispatcher', 's.protoerr');
+    add('# answers -32602 Invalid params, and the client SDK raises an exception', null);
+    return L;
+  }
+  /* discover + call */
+  add('@mcp.tool', 's.route');
+  add('async def weather(city: str, units: str = "metric") -> dict:', 's.route');
+  add('    """Current conditions for a city."""', null);
+  if (d.sc === 'call'){
+    add('    if units not in ("metric", "imperial"):              # arguments come from a model', 's.parse');
+    add('        raise ToolError("units must be metric or imperial")', null);
+    add('    row = cache.get(city) or await upstream.get(city)  # the slow part', 's.db');
+    add('    return {"station": "BERLIN", "temperatureC": 6.4,', 's.serialize');
+    add('            "windKph": 17.5, "conditions": "overcast"}', null);
+    nl();
+    cmt('# the dict above becomes both content[] (text for the model) and');
+    cmt('# structuredContent (typed data for your program) — one declaration, two consumers');
+  } else {
+    cmt('# nothing runs yet: this scenario only asks what the server can do');
+    cmt('# this decorator is all tools/list needs: name, description from the docstring,');
+    cmt('# inputSchema generated from the signature');
+  }
+  return L;
+}
+
+function serverTs(d){
+  const L = [];
+  const add = (t, k) => L.push({ t, k });
+  const nl = () => L.push({ t:'', k:null });
+  const cmt = t => L.push({ t, k:null });
+
+  add('import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";', 's.listen');
+  if (d.tr === 'http')
+    add('import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";', 's.listen');
+  else
+    add('import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";', 's.listen');
+  add('import { z } from "zod";', 's.listen');
+  nl();
+  add('const server = new McpServer({ name: "notes-tools", version: "2.1.0" });', 's.listen');
+  if (d.tr === 'stdio')
+    cmt('// stdio: the host spawned us; JSON-RPC lines arrive on stdin');
+  else
+    cmt('// streamable http: POST /mcp per request; no session id in 2026-07-28');
+  nl();
+  if (d.sc === 'mrtr' && d.R.mrtr === 'mrtr'){
+    add('server.registerTool("send_message", {', 's.route');
+    add('  description: "Send an SMS to a contact",', null);
+    add('  inputSchema: { to: z.string(), body: z.string() }', 's.parse');
+    add('}, async ({ to, body }, extra) => {', null);
+    add('  if (!extra.requestState)', 's.parse');
+    add('    return { resultType: "input_required",', 's.inputreq');
+    add('      inputRequests: { confirm: { type: "elicitation", message: `Send to ${to}?`,', null);
+    add('        requestedSchema: ElicitRequiredSchemaShape } },', null);
+    add('      requestState: encode(extra) };', null);
+    add('  const { confirmed } = extra.inputResponses!.confirm.content;', 's.retry');
+    add('  if (!confirmed) return { content: [{ type: "text", text: "not sent" }] };', null);
+    add('  const id = await sms.send(to, body);', 's.tool');
+    add('  return { content: [{ type: "text", text: `sent, id ${id}` }],', 's.serialize');
+    add('           structuredContent: { sent: true, messageId: id } };', null);
+    add('});', null);
+    return L;
+  }
+  if (d.sc === 'error'){
+    add('server.registerTool("weather", {', 's.route');
+    add('  description: "Current conditions for a city",', null);
+    add('  inputSchema: { city: z.string(), units: z.enum(["metric","imperial"]).default("metric") }', 's.parse');
+    add('}, async ({ city }) => {', null);
+    add('  const row = await upstream.get(city);   // unknown city -> upstream 503', 's.db');
+    add('  return { content: [{ type: "text", text: "upstream weather API returned 503" }],', 's.err');
+    add('           isError: true };               // the model reads this; it is not an exception', null);
+    add('});', null);
+    nl();
+    add('  // an unknown tool name never reaches the handler above: the SDK replies', 's.protoerr');
+    add('  // -32602 Invalid params, and the client-side SDK throws', null);
+    add('server.fallback?.();', null);
+    return L;
+  }
+  if (d.sc === 'mrtr'){
+    add('server.registerTool("send_message", {', 's.route');
+    add('  description: "Send an SMS to a contact",', null);
+    add('  inputSchema: { to: z.string(), body: z.string() }', 's.parse');
+    add('}, async ({ to, body }) => {', null);
+    add('  return { content: [{ type: "text",', 's.err');
+    add('    text: "refused: this revision cannot ask the user first" }], isError: true };', null);
+    add('});', null);
+    return L;
+  }
+  add('server.registerTool("weather", {', 's.route');
+  add('  description: "Current conditions for a city",', null);
+  if (d.sc === 'call')
+    add('  inputSchema: { city: z.string(), units: z.enum(["metric","imperial"]).default("metric") }', 's.parse');
+  else
+    add('  inputSchema: { city: z.string(), units: z.enum(["metric","imperial"]).default("metric") }', null);
+  if (d.sc === 'call'){
+    add('}, async ({ city, units }) => {', null);
+    add('  const row = await upstream.get(city);   // the slow part', 's.db');
+    add('  return { content: [{ type: "text", text: `${city}: ${row.t}°C, ${row.c}` }],', 's.serialize');
+    add('           structuredContent: { station: "BERLIN", temperatureC: row.t,', null);
+    add('                              windKph: row.w, conditions: row.c } };', null);
+    add('});', null);
+  } else {
+    add('});', null);
+    nl();
+    cmt('// registerTool is what tools/list reflects: description plus a JSON Schema built from zod');
+  }
+  nl();
+  if (d.tr === 'http')
+    add('await server.connect(new StreamableHTTPServerTransport());   // POST /mcp', 's.close');
+  else
+    add('await server.connect(new StdioServerTransport());            // stdin / stdout', 's.close');
+  return L;
+}
+
+/* ============================================================
+   step model: phases, frames on the transport, trace text
+   ============================================================ */
+const PH_BASE = {
+  'c.setup':10, 'c.connect':14, 'c.list':24, 'c.decide':36, 'c.call':40, 'c.elicit':58,
+  'c.recv':56, 'c.retry':60, 'c.result':76, 'c.answer':82, 'c.call2':88, 'c.err':104, 'c.close':112,
+  's.listen':12, 's.initR':18, 's.discoverR':20, 's.listR':26, 's.route':46, 's.auth':48,
+  's.parse':50, 's.protoerr':52, 's.inputreq':54, 's.backreq':56, 's.retry':66, 's.tool':70,
+  's.db':72, 's.serialize':74, 's.err':74, 's.close':110
+};
+function phases(d){
+  const P = Object.assign({}, PH_BASE);
+  if (d.sc === 'discover'){
+    /* two requests travel in this scenario: the discovery call, then tools/list.
+       Both are handled before the model is ever asked anything. */
+    P['s.route'] = 16; P['s.auth'] = 18;
+  }
+  if (d.sc === 'error'){
+    /* the second request is only sent after the model has read the first failure,
+       so the dispatcher's rejection happens much later in the run */
+    P['s.protoerr'] = 92;
+  }
+  if (d.sc === 'mrtr' && d.R.mrtr === 'back-req') P['c.elicit'] = 34;   // handler registered before the call
+  if (d.R.stateless){ delete P['s.initR']; } else { delete P['s.discoverR']; }
+  return P;
+}
+/* Each snippet shows the dispatcher once, so no line repeats here: extra round trips
+   (the retry in multi round-trip requests, the second bad call) travel as frames and get
+   their own phase numbers. REPEAT / STEP exist for the engine and stay empty. */
+const REPEAT = {};
+const STEP   = {};
+const MS = { 'c.setup':6, 'c.connect':35, 'c.list':12, 'c.decide':900, 'c.call':18, 'c.recv':4,
+             'c.elicit':1600, 'c.retry':14, 'c.result':6, 'c.answer':1300, 'c.call2':16, 'c.err':6,
+             'c.close':5, 's.listen':4, 's.route':2, 's.auth':9, 's.discoverR':6, 's.initR':14,
+             's.listR':10, 's.parse':4, 's.inputreq':6, 's.backreq':8, 's.retry':6, 's.tool':12,
+             's.serialize':6, 's.err':6, 's.protoerr':4, 's.close':4 };
+function stepMs(s, d){
+  if (s.side === 'wire') return 1;
+  if (s.k === 's.db') return 220;                 // upstream weather API
+  if (s.k === 's.auth') return d.tr === 'http' ? 9 : 0;   // stdio has no auth channel
+  return MS[s.k] || 2;
+}
+
+const J = o => JSON.stringify(o, null, 2);
+function meta(d, extra){
+  const m = { 'io.modelcontextprotocol/protocolVersion':d.rev,
+              'io.modelcontextprotocol/clientCapabilities':{ elicitation:{} },
+              'io.modelcontextprotocol/clientInfo':{ name:'notes-app', version:'1.4.0' } };
+  return Object.assign(m, extra || {});
+}
+function req(d, id, method, params, extraMeta){
+  if (d.R.stateless) return { jsonrpc:'2.0', id, method, params, _meta:meta(d, extraMeta) };
+  return { jsonrpc:'2.0', id, method, params };
+}
+function res(d, id, result, extraMeta){
+  const r = Object.assign({}, result);
+  if (d.R.stateless){
+    r.resultType = r.resultType || 'complete';
+    r._meta = { 'io.modelcontextprotocol/serverInfo':{ name:'notes-tools', version:'2.1.0' }, ...(extraMeta||{}) };
+  }
+  return { jsonrpc:'2.0', id, result:r };
+}
+
+/* the messages that actually travel, placed by phase number */
+function wireEvents(d, P){
+  const E = [];
+  const push = (p, txt, short) => E.push({ p, txt, short });
+  const post = (p, m, name) => {
+    if (d.tr !== 'http') return;
+    const h = ['POST /mcp  http/1.1', 'content-type: application/json',
+               'accept: application/json, text/event-stream'];
+    if (d.R.stateless){ h.push('mcp-method: ' + m, 'mcp-name: ' + (name || '-')); }
+    else { h.push('authorization: Bearer eyJhbGciOi…'); h.push('mcp-session-id: 7f3a9c4e-2b11-4d5e-9a77-0c1b8f6d3e20'); }
+    push(p, h.join('\n'), 'POST /mcp');
+  };
+  const frame = (p, dir, obj) => {
+    const body = JSON.stringify(obj);
+    d.bytes += body.length; d.msgCount++;
+    if (dir === '<' && d.tr === 'http')
+      push(p - 0.06, 'HTTP/1.1 200 ok\ncontent-type: application/json\nmessages arrive in the response body, or on an SSE stream when the call is still running', 'HTTP 200');
+    const txt = (dir === '>' ? 'client \u2192 server   ' : 'server \u2192 client   ') +
+      J(obj).replace(/\n/g, '\n                    ') + '\n                    ' + bytesOf(body) + ' bytes';
+    const label = obj.method ? obj.method : 'id ' + obj.id + ' ' + (obj.error ? 'error' : 'answer');
+    push(p, txt, (dir === '>' ? '\u2192 ' : '\u2190 ') + label);
+  };
+
+  if (d.tr === 'stdio'){
+    push(P['s.listen'] - 1, 'host spawns the server:  uv run server.py\nstdin / stdout pipes are open; one JSON object per line, \\n separated', 'spawn: uv run server.py');
+  } else {
+    push(P['s.listen'] - 1, 'the transport is already open (cold start is in the first scenario)\nnothing travels between requests: MCP has no persistent HTTP connection', 'transport: POST /mcp');
+  }
+
+  if (d.sc !== 'discover'){
+    push(P['c.list'] + 0.3, 'tools/list was answered at startup: the client keeps the schemas cached' +
+      (d.R.stateless ? '\n(ttlMs in the 2026-07-28 result says how long that cache is good for)'
+                     : '\n(this revision has no freshness hint: the client refetches whenever it reconnects)'), 'schema cache');
+  }
+
+  if (d.sc === 'discover'){
+    if (d.R.stateless){
+      post(P['c.connect'] + 0.15, 'server/discover');
+      frame(P['c.connect'] + 0.2, '>', req(d, 1, 'server/discover', {}));
+      frame(P['s.discoverR'] + 0.5, '<', res(d, 1, { supportedProtocolVersions:['2026-07-28','2025-11-25'],
+              capabilities:{ tools:{} } }));
+      post(P['c.list'] + 0.15, 'tools/list');
+      frame(P['c.list'] + 0.2, '>', req(d, 2, 'tools/list', {}));
+      frame(P['s.listR'] + 0.5, '<', res(d, 2, {
+        tools:[{ name:'weather', description:'Current conditions for a city.',
+                 inputSchema:{ type:'object', properties:{ city:{ type:'string' },
+                   units:{ enum:['metric','imperial'], default:'metric' } }, required:['city'] } }],
+        ttlMs:300000, cacheScope:'private' }, { 'io.modelcontextprotocol/serverInfo':{ name:'notes-tools', version:'2.1.0' } }));
+    } else {
+      post(P['c.connect'] + 0.15, 'initialize');
+      frame(P['c.connect'] + 0.2, '>', { jsonrpc:'2.0', id:1, method:'initialize', params:{
+        protocolVersion:d.rev,
+        capabilities: d.rev === '2025-11-25' ? { roots:{ listChanged:true }, elicitation:{} } : { roots:{ listChanged:true } },
+        clientInfo:{ name:'notes-app', version:'1.4.0' } } });
+      const init = { protocolVersion:d.rev, capabilities:{ tools:{ listChanged:false } },
+                     serverInfo:{ name:'notes-tools', version:'2.1.0' } };
+      frame(P['s.initR'] + 0.5, '<', { jsonrpc:'2.0', id:1, result:init });
+      frame(P['c.list'] - 4, '>', { jsonrpc:'2.0', method:'notifications/initialized' });
+      post(P['c.list'] + 0.15, 'tools/list');
+      frame(P['c.list'] + 0.2, '>', { jsonrpc:'2.0', id:2, method:'tools/list', params:{} });
+      frame(P['s.listR'] + 0.5, '<', { jsonrpc:'2.0', id:2, result:{
+        tools:[{ name:'weather', description:'Current conditions for a city.',
+                 inputSchema:{ type:'object', properties:{ city:{ type:'string' },
+                   units:{ enum:['metric','imperial'], default:'metric' } }, required:['city'] } }] } });
+    }
+  }
+
+  if (d.sc === 'call'){
+    post(P['c.call'] + 0.15, 'tools/call', 'weather');
+    frame(P['c.call'] + 0.2, '>', req(d, 5, 'tools/call',
+      { name:'weather', arguments:{ city:'Berlin', units:'metric' } }, { progressToken:41 }));
+    const out = { content:[{ type:'text', text:'Berlin: 6.4\u00b0C, overcast' }], isError:false };
+    if (d.rev !== '2025-03-26') out.structuredContent = { station:'BERLIN', temperatureC:6.4, windKph:17.5, conditions:'overcast' };
+    frame(P['s.serialize'] + 0.5, '<', res(d, 5, out));
+  }
+
+  if (d.sc === 'error'){
+    post(P['c.call'] + 0.15, 'tools/call', 'weather');
+    frame(P['c.call'] + 0.2, '>', req(d, 5, 'tools/call', { name:'weather', arguments:{ city:'Nowhereville' } }));
+    frame(P['s.err'] + 0.5, '<', res(d, 5, { content:[{ type:'text', text:'upstream weather API returned 503' }],
+      isError:true }));
+    post(P['c.call2'] + 0.15, 'tools/call', 'weather2');
+    frame(P['c.call2'] + 0.2, '>', req(d, 6, 'tools/call', { name:'weather2', arguments:{} }));
+    frame(P['s.protoerr'] + 0.5, '<', { jsonrpc:'2.0', id:6, error:{ code:-32602, message:'Unknown tool "weather2"' } });
+  }
+
+  if (d.sc === 'mrtr'){
+    post(P['c.call'] + 0.15, 'tools/call', 'send_message');
+    const args = { to:'+49 30 8874521', body:'running 15 min late' };
+    frame(P['c.call'] + 0.2, '>', req(d, 5, 'tools/call', { name:'send_message', arguments:args }));
+    if (d.R.mrtr === 'mrtr'){
+      frame(P['s.inputreq'] + 0.5, '<', res(d, 5, {
+        resultType:'input_required',
+        inputRequests:{ confirm:{ type:'elicitation', message:'Send to +49 30 8874521: "running 15 min late"?',
+          requestedSchema:{ type:'object', properties:{ confirmed:{ type:'boolean', title:'Confirm?' } }, required:['confirmed'] } } },
+        requestState:'eyJhdWRpZW5jZSI6InNlbmRfbXNzIiwiZXhwIjoxNzYz…' }));
+      post(P['c.retry'] + 0.15, 'tools/call', 'send_message');
+      frame(P['c.retry'] + 0.2, '>', req(d, 6, 'tools/call', { name:'send_message', arguments:args,
+        requestState:'eyJhdWRpZW5jZSI6InNlbmRfbXNzIiwiZXhwIjoxNzYz…',
+        inputResponses:{ confirm:{ action:'accept', content:{ confirmed:true } } } }));
+      frame(P['s.serialize'] + 0.5, '<', res(d, 6, { resultType:'complete',
+        content:[{ type:'text', text:'sent, id a91f' }], structuredContent:{ sent:true, messageId:'a91f' } }));
+    } else if (d.R.mrtr === 'back-req'){
+      frame(P['s.backreq'] + 0.5, '<', { jsonrpc:'2.0', id:90, method:'elicitation/create', params:{
+        message:'Send to +49 30 8874521: "running 15 min late"?',
+        requestedSchema:{ type:'object', properties:{ confirmed:{ type:'boolean', title:'Confirm?' } }, required:['confirmed'] } } });
+      frame(P['s.backreq'] + 2, '>', { jsonrpc:'2.0', id:90, result:{ action:'accept', content:{ confirmed:true } } });
+      frame(P['s.serialize'] + 0.5, '<', { jsonrpc:'2.0', id:5, result:{ content:[{ type:'text', text:'sent, id a91f' }] } });
+    } else {
+      frame(P['s.err'] + 0.5, '<', { jsonrpc:'2.0', id:5, result:{
+        content:[{ type:'text', text:'refused: this revision cannot ask the user first' }], isError:true } });
+    }
+  }
+
+  return E;
+}
+
+/* trace text for each code step */
+function traceMsg(key, d, i, n){
+  const repeat = n > 1 ? '  (run ' + (i + 1) + ' of ' + n + ')' : '';
+  switch (key){
+    case 'c.setup': return { m:'host app: build the transport and one Client',
+      note:'"MCP client" means the connector inside your app, not your app. One Client per server you talk to; the host owns the model.' };
+    case 'c.connect': return { m:d.R.stateless ? 'connect: open the transport (no handshake in ' + d.rev + ')'
+                                               : 'connect: initialize handshake',
+      note:d.R.stateless ? 'In 2026-07-28 the handshake is gone: every request carries its own protocolVersion and capabilities in _meta, so there is nothing to agree up front.'
+                         : 'The older revisions agree a version and exchange capabilities first, then the client sends notifications/initialized before any other request.' };
+    case 'c.list': return { m:'client \u2192 server: tools/list',
+      note:'This is what makes MCP pluggable: the tool list is discovered, never compiled in.' + (d.R.stateless ? ' In 2026-07-28 the result also carries ttlMs and cacheScope, so the client knows how long to cache it.' : '') + repeat };
+    case 'c.decide': return { m:'the model picks a tool and writes the arguments',
+      note:'The model only sees name, description and inputSchema. That is the entire surface your tool has. The arguments it writes are untrusted input.' };
+    case 'c.call': return { m:'client \u2192 server: tools/call', note:'JSON-RPC request: id, method, params. The id is how the answer is matched back; two calls in flight can answer in any order.' };
+    case 'c.call2': return { m:'client \u2192 server: tools/call (second request)', note:'Same transport, same method, a different id. Nothing about the first failure lingers on the connection.' };
+    case 'c.recv': return { m:'first answer: the server is asking us something', note:'resultType:"input_required" is not an error — it means "the same request, plus what I asked for, will finish the job".' };
+    case 'c.elicit': return { m:'client: ask a human, put the answer in the retry',
+      note:d.R.mrtr === 'back-req' ? 'The client registers a handler; the server sends a request backwards while the original call is still open. Deprecated now.'
+                                   : 'Nothing in the protocol decides who is asked: the client shows the message in its own UI.' };
+    case 'c.retry': return { m:'client \u2192 server: the same call again, with inputResponses',
+      note:'A NEW request id — the first one is finished. The server recognises its own requestState blob and resumes where it stopped. The exact field placement is the Multi Round-Trip Requests pattern of 2026-07-28; read the spec page before implementing it.' };
+    case 'c.result': return { m:'client: feed the result back into the conversation',
+      note:'content[] is for the model (text blocks); structuredContent is for your program (typed JSON). A tool failure with isError:true travels through the same path so the model can react to it.' };
+    case 'c.answer': return { m:'the model writes the final answer', note:'That is one full agent loop iteration. Real runs do this many times, and each tool call is another round trip.' };
+    case 'c.err': return { m:'the client SDK throws a protocol error', note:'The model never sees this. Errors at this level are the client\u2019s problem: retry, log, or tell the user the server is broken.' };
+    case 'c.close': return { m:'client: close the transport',
+      note:d.tr === 'stdio' ? 'Closing stdin makes the child process exit.' : 'Nothing to keep alive: HTTP requests are independent, and 2026-07-28 has no session to end.' };
+    case 's.listen': return { m:'server: the transport is listening',
+      note:d.tr === 'stdio' ? 'stdio: the host started us. There is no port, no TLS, no auth — whoever can spawn you is already trusted.'
+                            : 'Streamable HTTP: one POST per JSON-RPC request, response is JSON or an SSE stream for long calls.' };
+    case 's.route': return { m:'server: dispatch by method' + repeat, note:'The dispatcher checks the tool name against the registry before any handler runs. An unknown name never reaches your code.' };
+    case 's.auth': return { m:d.tr === 'http' ? 'server: check the bearer token' : 'server: no auth channel on stdio',
+      note:d.tr === 'http' ? 'Authorization is an extra layer on top of MCP (OAuth 2.1), not part of the core message shape.'
+                           : 'On stdio this step does not exist. Trust comes from who spawned the process.' + repeat };
+    case 's.discoverR': return { m:'server: answer server/discover', note:'The one RPC a server MUST implement: supported protocol versions, capabilities, identity. Optional to call, but it is how a client can pick a version.' };
+    case 's.initR': return { m:'server: agree the protocol version and capabilities', note:'If the server does not speak that version it says so here, and the client decides whether to continue.' };
+    case 's.listR': return { m:'server: answer tools/list', note:'Generated from the tool declarations: name, description, inputSchema. Order is meant to be stable, because a changing prompt busts the model\u2019s prompt cache.' };
+    case 's.parse': return { m:'server: validate the model-written arguments', note:'The schema is a promise the client tries to keep; the server must still enforce it. This is where prompt-injection attempts get caught.' };
+    case 's.inputreq': return { m:'server: return resultType "input_required" + requestState', note:'The server keeps no session, so it hands its own state back to the client as an opaque blob and waits to be re-asked.' };
+    case 's.backreq': return { m:'server: send a request back to the client (elicitation/create)', note:'The original tools/call stays open while the server waits for an answer. 2026-07-28 replaced this with the retry pattern.' };
+    case 's.retry': return { m:'server: decode requestState, read inputResponses, continue', note:'Idempotency matters here: the client may retry for reasons other than answering your question.' };
+    case 's.tool': return { m:'server: run the tool body', note:'Side effects belong here and nowhere else — everything before this point can be retried harmlessly.' };
+    case 's.db': return { m:'server: call the upstream API', note:'Slow. If it takes long, the server can send notifications/progress (the client passed a progressToken) and then the normal answer.' };
+    case 's.serialize': return { m:'server: build content[] + structuredContent',
+      note:d.rev === '2025-03-26' ? 'This revision has no structuredContent: the model gets text, and your program has to parse it back out.'
+                                  : 'One return value, two consumers: text for the model, typed JSON for the code.' + (d.R.stateless ? ' resultType:"complete" marks it as an ordinary answer.' : '') };
+    case 's.err': return { m:'server: the tool failed, and that is a normal result',
+      note:'isError:true plus a text block. HTTP stays 2xx, JSON-RPC stays a result. The model reads the text and chooses what to do next.' };
+    case 's.protoerr': return { m:'server: reject the request with a JSON-RPC error', note:'Bad request, not a failed tool: -32602 Invalid params. The client throws; the model is never told.' };
+    case 's.close': return { m:'server: connection closed / process exits', note:'In 2026-07-28 there is no per-connection state to clean up: that is what stateless bought, and what it cost.' };
+  }
+  return { m:key, note:'' };
+}
+
+/* ==== ENGINE START ==== */
+/* Keep this block byte-identical in api-learning.html and mcp-learning.html.
+   dev/check-shared.js fails the build if the two copies drift. It only calls
+   phases(d), REPEAT, STEP, wireEvents(d, P) and stepMs(s, d), which each page defines. */
+function buildSteps(cl, sv, d){
+  const P = phases(d);
+  // one side's steps, in the order their lines appear in the file (repeated lines expand in place)
+  const seq = (lines, side) => {
+    const items = [];
+    lines.forEach((ln, ix) => {
+      if (!ln.k) return;
+      const k = ln.k;
+      if (!(k in P)) console.warn('no phase for key', k);
+      items.push({ k, side, line: ix, txt: ln.t.trim(), n: Math.max(1, REPEAT[k] ? REPEAT[k](d) : 1) });
+    });
+    const a = [];
+    for (let i = 0; i < items.length;){
+      /* consecutive lines that repeat the same number of times are one loop body: expand it per
+         iteration, so the walk reads read -> write -> read -> write instead of running one line
+         eight times and then the next line eight times. */
+      let j = i + 1;
+      if (items[i].n > 1) while (j < items.length && items[j].n === items[i].n) j++;
+      const group = items.slice(i, j);
+      for (let r = 0; r < items[i].n; r++)
+        group.forEach(g => a.push({ k: g.k, side: g.side, line: g.line, txt: g.txt, i: r, n: g.n, p: (g.k in P ? P[g.k] : 99) + r * (STEP[g.k] || 0) }));
+      i = j;
+    }
+    return a;
+  };
+  const A = seq(cl, 'client'), B = seq(sv, 'server');
+  const W = wireEvents(d, P).map(w => ({ k: null, side: 'wire', txt: w.txt, short: w.short, i: 0, n: 1, p: w.p }));
+  W.sort((x, y) => x.p - y.p);
+
+  /* Merge the three streams by phase number, but never take a step out of its own file's order:
+     a pane's highlight can therefore only move down the page. The phase number decides how the
+     client, the server and the wire interleave — it can no longer reorder lines inside a pane. */
+  const out = [];
+  let i = 0, j = 0, k = 0;
+  while (i < A.length || j < B.length || k < W.length){
+    const head = [];
+    if (i < A.length) head.push([A[i].p, 0]);
+    if (j < B.length) head.push([B[j].p, 1]);
+    if (k < W.length) head.push([W[k].p, 2]);
+    head.sort((x, y) => x[0] - y[0] || x[1] - y[1]);   // tie: client, then server, then wire
+    const which = head[0][1];
+    out.push(which === 0 ? A[i++] : which === 1 ? B[j++] : W[k++]);
+  }
+  let t = 0;
+  for (const s of out){ s.t = t; t += stepMs(s, d); }
+  return { steps: out, P };
+}
+/* ==== ENGINE END ==== */
+
+/* ============================================================
+   syntax highlight (shared shape with api-learning.html)
+   ============================================================ */
+const KWSET = {
+  python: new Set('import from def async await return class if elif else while for in with as yield break print None True False lambda try except raise pass open len self'.split(' ')),
+  js: new Set('const let var function async await return require new if else for of in class import export from break catch try throw null true false undefined this typeof'.split(' ')),
+};
+function hl(text, lang){
+  const e = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const set = KWSET[lang];
+  const kw = s => e(s).replace(/[A-Za-z_$][A-Za-z0-9_$]*/g, w => set.has(w) ? '<span class=tk-k>' + w + '</span>' : w);
+  const RX = /(\/\/[^\n]*|#[^\n]*)|("(?:[^"\\]|\\\.)*"|("""[\s\S]*?"""))|(\b\d[\d_.,]*\b)|(@[\w.]+|<\/?[A-Za-z][\w]*>)/g;
+  const out = [];
+  let last = 0, m;
+  while ((m = RX.exec(text)) !== null){
+    if (m.index > last) out.push(kw(text.slice(last, m.index)));
+    if (m[1]) out.push('<span class=tk-c>' + e(m[1]) + '</span>');
+    else if (m[2] || m[3]) out.push('<span class=tk-s>' + e(m[2] || m[3]) + '</span>');
+    else if (m[4]) out.push('<span class=tk-n>' + e(m[4]) + '</span>');
+    else if (m[5]) out.push('<span class=tk-a>' + e(m[5]) + '</span>');
+    last = m.index + m[0].length;
+  }
+  out.push(kw(text.slice(last)));
+  return out.join('');
+}
+
+/* ============================================================
+   UI state + playback
+   ============================================================ */
+const el = id => document.getElementById(id);
+const state = { si:0, tr:'http', rev:'2026-07-28', sv:'python', speed:1, notes:true, cur:-1, playing:false, timer:null, steps:[], clLines:[], svLines:[], view:'cli', follow:true };
+const narrow = () => window.matchMedia('(max-width:860px)').matches;
+const noteWord = () => narrow() ? 'Notes' : 'Explanations';
+
+/* one panel at a time on phones: client | server | trace */
+function applyView(v){
+  state.view = v;
+  document.body.dataset.view = v;
+  document.querySelectorAll('#tabs [data-view]').forEach(b => {
+    const on = b.dataset.view === v;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+}
+function setView(v){ applyView(v); setActive(); }
+
+function chipGroup(host, items, cls){
+  host.innerHTML = ''; host._items = items;
+  items.forEach(it => {
+    const b = document.createElement('button');
+    b.innerHTML = it.label; b.dataset.v = it.v;
+    if (it.v === state[cls]) b.classList.add('on');
+    b.onclick = () => { state[cls] = it.v; regen(); };
+    host.appendChild(b);
+  });
+}
+function refreshChips(){
+  el('exSel').value = SCEN[state.si].id;
+  el('revSel').value = state.rev;
+  [['trBtns','tr'],['svBtns','sv']].forEach(([id, key]) => {
+    const host = el(id);
+    host.querySelectorAll('[data-v]').forEach(b => {
+      if (b.dataset.v === state[key]) b.classList.add('on'); else b.classList.remove('on');
+    });
+  });
+}
+function initChips(){
+  const ex = el('exSel');
+  ex.innerHTML = '';
+  SCEN.forEach(sc => {
+    const o = document.createElement('option');
+    o.value = sc.id; o.textContent = sc.title; ex.appendChild(o);
+  });
+  ex.value = SCEN[state.si].id;
+  ex.onchange = () => { state.si = SCEN.findIndex(sc => sc.id === ex.value); regen(); };
+  const rv = el('revSel');
+  rv.innerHTML = '';
+  Object.keys(REVS).forEach(v => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = REVS[v].name; rv.appendChild(o);
+  });
+  rv.value = state.rev;
+  rv.title = Object.entries(REVS).map(([k, r]) => k + ': ' + r.note).join('\n');
+  rv.onchange = () => { state.rev = rv.value; regen(); };
+  chipGroup(el('trBtns'), Object.entries(TRANS).map(([v, t]) => ({ v, label:t.name })), 'tr');
+  chipGroup(el('svBtns'), Object.entries(SVLANGS).map(([v, l]) => ({ v, label:l })), 'sv');
+}
+function regen(){
+  stop();
+  const sc = SCEN[state.si];
+  const d = resolve(sc);
+  state.d = d;
+  state.clLines = client(d).filter(x => x && typeof x.t === 'string');
+  state.svLines = server(d).filter(x => x && typeof x.t === 'string');
+  const built = buildSteps(state.clLines, state.svLines, d);
+  state.steps = built.steps; state.cur = -1;
+  refreshChips(); renderCode(); renderTop(); renderTrace(); setActive(); paintRun();
+}
+function renderCode(){
+  const mk = (lines, lang) => lines.map((ln, i) =>
+    '<div class=ln data-line=' + i + '><span class=num>' + (i+1) + '</span><span class=src>' + hl(ln.t, lang) + '</span></div>').join('');
+  el('codeCli').innerHTML = mk(state.clLines, 'js');
+  el('codeSrv').innerHTML = mk(state.svLines, state.sv);
+}
+function renderTop(){
+  const sc = SCEN[state.si], d = state.d;
+  el('desc').innerHTML = '<b>' + esc(sc.title) + '</b> \u2014 ' + esc(sc.blurb) +
+    '   <span class=api>' + esc(d.R.note) + '</span>';
+  el('clName').textContent = CLNAME;
+  el('revName').textContent = d.rev;
+  const warn = [];
+  if (d.sc === 'mrtr' && d.R.mrtr === 'none')
+    warn.push('2025-03-26 has no elicitation at all: the server cannot ask, only refuse');
+  if (d.sc === 'mrtr' && d.R.mrtr === 'back-req')
+    warn.push('elicitation/create is server-initiated and now deprecated: 2026-07-28 retries instead');
+  if (d.sc === 'call' && d.rev === '2025-03-26')
+    warn.push('no structuredContent in this revision: your program has to parse the text back out');
+  if (d.sc === 'discover' && d.R.stateless)
+    warn.push('server/discover is new in 2026-07-28: older clients send initialize');
+  el('chips').innerHTML =
+    '<span class=chip>client <b>' + CLNAME + '</b></span>' +
+    '<span class=chip>server <b>' + SVLANGS[state.sv] + '</b></span>' +
+    '<span class=chip>transport <b>' + TRANS[state.tr].name + '</b> ' + TRANS[state.tr].note + '</span>' +
+    '<span class=chip>revision <b>' + d.rev + '</b></span>' +
+    warn.map(w => '<span class="chip warn">' + esc(w) + '</span>').join('');
+}
+function renderTrace(){
+  const t = el('trace');
+  const N = state.steps.length;
+  if (state.cur < 0){
+    t.innerHTML = '<div class="row wire"><span class=t>&ndash;</span><span class=b>READY</span><span class=m>' +
+      N + ' steps \u00b7 client ' + CLNAME + ' \u00b7 server ' + SVLANGS[state.sv] + ' \u00b7 ' + TRANS[state.tr].name +
+      ' \u00b7 protocol ' + state.rev +
+      '\npress Run (or space). The highlighted line is the one running; the yellow blocks are the JSON-RPC messages that travel.</span></div>';
+    el('trStat').textContent = 'step 0/' + N;
+    return;
+  }
+  const done = state.cur >= N - 1;
+  let html = '';
+  for (let i = 0; i <= state.cur; i++){
+    const s = state.steps[i];
+    const tr = s.side === 'wire' ? { m:s.short, w:s.txt, note:null } : traceMsg(s.k, state.d, s.i, s.n);
+    const badge = s.side === 'wire' ? 'MESSAGE' : s.side === 'client' ? 'CLIENT' : 'SERVER';
+    const where = s.line != null ? '  \u00b7  ' + (s.side === 'client' ? 'client' : 'server') + ' line ' + (s.line + 1) : '';
+    html += '<div class="row ' + s.side + (i === state.cur ? ' cur' : '') + '">' +
+      '<span class=t>' + (s.t/1000).toFixed(3) + '</span>' +
+      '<span class=b>' + badge + '</span>' +
+      '<span class=m>' + esc(tr.m) + where + (s.line != null ? '\n' + esc(s.txt) : '') + '</span></div>';
+    if (tr.w) html += '<div class=wireblk>' + esc(tr.w) + '</div>';
+    const repeat = i > 0 && state.steps[i-1].k === s.k && s.k;
+    if (state.notes && tr.note && !repeat) html += '<div class=noteblk>' + esc(tr.note) + '</div>';
+  }
+  if (done){
+    const last = state.steps[N-1], d = state.d;
+    html += '<div class="row wire"><span class=t>' + (last.t/1000).toFixed(3) + '</span><span class=b>DONE</span><span class=m>' +
+      N + ' steps \u00b7 ' + (last.t/1000).toFixed(2) + 's simulated \u00b7 ' + d.msgCount + ' JSON-RPC messages \u00b7 ' +
+      bytesOf(d.bytes) + ' on the transport \u00b7 ' + TRANS[d.tr].name + ' \u00b7 protocol ' + d.rev +
+      '\nnext: switch the revision, or the transport, and run the same scenario again.</span></div>';
+  }
+  t.innerHTML = html;
+  t.scrollTop = t.scrollHeight;
+  el('trStat').textContent = 'step ' + (state.cur + 1) + '/' + N + '  ' + Math.round((state.cur + 1) / N * 100) + '%';
+}
+function setActive(){
+  document.querySelectorAll('.ln.cur').forEach(n => n.classList.remove('cur'));
+  el('paneCli').classList.remove('dimmed'); el('paneSrv').classList.remove('dimmed');
+  el('pos').textContent = '';
+  const s = state.steps[state.cur];
+  if (!s) return;
+  if (s.side === 'wire'){ el('pos').textContent = 'in flight: no code running, a message is moving'; return; }
+  if (narrow() && state.follow && state.view !== 'trace') applyView(s.side === 'client' ? 'cli' : 'srv');
+  const box = s.side === 'client' ? el('codeCli') : el('codeSrv');
+  el(s.side === 'client' ? 'paneSrv' : 'paneCli').classList.add('dimmed');
+  const node = box.querySelector('[data-line="' + s.line + '"]');
+  if (node){
+    node.classList.add('cur');
+    const want = node.offsetTop - box.clientHeight / 2;
+    box.scrollTop = Math.max(0, Math.min(want, Math.max(0, box.scrollHeight - box.clientHeight)));
+  }
+  el('pos').textContent = (s.side === 'client' ? 'client line ' : 'server line ') + (s.line + 1);
+}
+function speedMs(){ return state.speed <= 0 ? 0 : Math.round(700 / state.speed); }
+function advance(){
+  if (state.cur >= state.steps.length - 1) return false;
+  state.cur++; renderTrace(); setActive();
+  return true;
+}
+function tick(){
+  if (!state.playing) return;
+  if (!advance()){
+    state.playing = false; paintRun();
+    const last = state.steps[state.steps.length - 1];
+    el('stat').textContent = 'finished: ' + state.steps.length + ' steps, ' + (last.t/1000).toFixed(2) + 's simulated';
+    return;
+  }
+  const sp = speedMs();
+  if (sp > 0) state.timer = setTimeout(tick, sp); else tick();
+}
+function play(){
+  if (state.playing) return;
+  if (state.cur >= state.steps.length - 1){ state.cur = -1; renderTrace(); setActive(); }
+  state.playing = true; paintRun(); el('stat').textContent = 'running...';
+  tick();
+}
+function stop(){ state.playing = false; clearTimeout(state.timer); paintRun(); }
+/* Run doubles as Pause while it is playing: icon and label follow the state */
+const ICON_PLAY  = '<svg class=ic viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 2.6 13 8l-8.8 5.4z"/></svg>';
+const ICON_PAUSE = '<svg class=ic viewBox="0 0 16 16" aria-hidden="true"><rect x="3.9" y="3" width="2.6" height="10" rx="1.2"/><rect x="9.5" y="3" width="2.6" height="10" rx="1.2"/></svg>';
+function paintRun(){
+  const done = state.cur >= state.steps.length - 1;
+  const b = el('runBtn');
+  b.innerHTML = (state.playing ? ICON_PAUSE : ICON_PLAY) + '<span>' + (state.playing ? 'Pause' : done ? 'Replay' : 'Run') + '</span>';
+  b.classList.toggle('playing', state.playing);
+  b.title = state.playing ? 'pause here' : done ? 'run again from the top' : 'run to the end';
+}
+
+el('runBtn').onclick = () => { state.playing ? stop() : play(); };
+el('nextBtn').onclick = () => { stop(); advance(); };
+el('prevBtn').onclick = () => { stop(); state.cur = Math.max(-1, state.cur - 1); renderTrace(); setActive(); };
+el('resetBtn').onclick = () => { stop(); state.cur = -1; renderTrace(); setActive(); el('stat').textContent = 'reset \u2014 pick another revision, transport or scenario and press Run'; };
+const SPEEDS = [{ v:1, l:'normal' }, { v:0.35, l:'slow' }, { v:2.5, l:'fast' }, { v:0, l:'instant' }];
+const SHORTSPD = { 1:'1×', 0.35:'½×', 2.5:'3×', 0:'all' };
+const speedWord = s => narrow() ? 'Speed ' + SHORTSPD[s.v] : 'Speed: ' + s.l;
+el('speedBtn').onclick = () => {
+  const i = SPEEDS.findIndex(s => s.v === state.speed);
+  const nx = SPEEDS[(i + 1) % SPEEDS.length];
+  state.speed = nx.v; el('speedBtn').textContent = speedWord(nx);
+  if (nx.v === 0){ stop(); state.cur = state.steps.length - 1; renderTrace(); setActive(); el('stat').textContent = 'all ' + state.steps.length + ' steps shown at once'; }
+  else if (state.playing){ clearTimeout(state.timer); tick(); }
+};
+el('noteBtn').onclick = () => { state.notes = !state.notes; el('noteBtn').textContent = noteWord() + ': ' + (state.notes ? 'on' : 'off'); renderTrace(); };
+document.addEventListener('keydown', (ev) => {
+  const tag = (ev.target && ev.target.tagName || '').toLowerCase();
+  if (tag === 'select' || tag === 'input' || tag === 'textarea') return;
+  if (tag === 'button' && (ev.key === ' ' || ev.key === 'Enter')) return;  // let the focused control act on it
+  if (ev.key === ' '){ ev.preventDefault(); el('runBtn').onclick(); }
+  else if (ev.key === 'ArrowRight'){ ev.preventDefault(); el('nextBtn').onclick(); }
+  else if (ev.key === 'ArrowLeft'){ ev.preventDefault(); el('prevBtn').onclick(); }
+  else if (ev.key === 'r'){ ev.preventDefault(); regen(); }
+});
+
+/* ---------- mobile panel switching + swipe ---------- */
+el('followBtn').onclick = () => {
+  state.follow = !state.follow;
+  el('followBtn').textContent = 'Follow: ' + (state.follow ? 'on' : 'off');
+  el('followBtn').classList.toggle('on', state.follow);
+};
+document.querySelectorAll('#tabs [data-view]').forEach(b => { b.onclick = () => setView(b.dataset.view); });
+let tX = 0, tY = 0;
+const touchOf = ev => (ev.changedTouches && ev.changedTouches[0]) || (ev.touches && ev.touches[0]);
+function swipeStart(ev){ const t = touchOf(ev); if (!t) return; tX = t.clientX; tY = t.clientY; }
+function swipeEnd(ev){
+  if (!narrow()) return;
+  const t = touchOf(ev); if (!t) return;
+  const dx = t.clientX - tX, dy = t.clientY - tY;
+  if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * .7) return;
+  const order = ['cli', 'srv', 'trace'];
+  const i = Math.max(0, Math.min(order.length - 1, order.indexOf(state.view) + (dx < 0 ? 1 : -1)));
+  setView(order[i]);
+}
+['mid', 'bot'].forEach(id => {
+  const n = el(id);
+  n.addEventListener('touchstart', swipeStart, { passive:true });
+  n.addEventListener('touchend', swipeEnd, { passive:true });
+});
+window.addEventListener('resize', () => applyView(state.view));
+if (narrow()){
+  applyView('cli'); el('about').open = false;
+  el('noteBtn').textContent = noteWord() + ': ' + (state.notes ? 'on' : 'off');
+  el('speedBtn').textContent = speedWord(SPEEDS.find(s => s.v === state.speed));
+  document.querySelectorAll('#tabs [data-view]').forEach(b => { b.setAttribute('aria-label', 'show ' + b.textContent); b.textContent = b.dataset.view === 'cli' ? 'Client' : b.dataset.view === 'srv' ? 'Server' : 'Trace'; });
+}
+else { el('followBtn').classList.add('on'); }
+initChips();
+regen();
+el('stat').textContent = 'pick a scenario, then press Run';
+</script>
+</body>
+</html>
