@@ -161,12 +161,13 @@ const HOST = 'api.acme.dev', BASE = 'https://' + HOST, TOK = 'pk_live_9f2a4c';
 const SCEN = [
   { id:'search', title:'Library / package search', blurb:'GET a JSON list matching a query string: the classic "just call a URL" API.',
     method:'GET', path:'/api/search', query:{q:'json parser', limit:5},
+    gqlResp:{count:3, results:[{name:'json-parser',downloads:1284900},{name:'jsonparser',downloads:210340},{name:'fast-json',downloads:53010}]},
     resp:{query:'json parser', count:3, results:[{name:'json-parser',downloads:1284900},{name:'jsonparser',downloads:210340},{name:'fast-json',downloads:53010}]},
     ctype:'application/json', size:148, dbSql:"SELECT name, downloads FROM packages WHERE name ILIKE $1 ORDER BY downloads DESC LIMIT $2",
     dbRows:3, dbMs:14, frames:3, api0:'rest',
     gqlDoc:['query Search($q: String!, $limit: Int) {','  search(q: $q, limit: $limit) { count results { name downloads } }','}'],
     gqlVars:{q:'json parser', limit:5},
-    grpc:{svc:'package.Index', rpc:'Search', type:'SearchRequest', rt:'SearchResponse', fields:{query:'json parser', limit:5}},
+    grpc:{svc:'acme.Index', rpc:'Search', type:'SearchRequest', rt:'SearchResponse', fields:{query:'json parser', limit:5}, reqBytes:15, respBytes:69},
     wsPath:'/ws/search', wsMsg:{op:'subscribe', channel:'search', q:'json parser'} },
 
   { id:'auth', title:'Auth / token exchange', blurb:'POST credentials, get a bearer token back: the body is FORM-encoded, not JSON.',
@@ -174,11 +175,12 @@ const SCEN = [
     bodyWire:'grant_type=password&client_id=acme-web&client_secret=cs_live_7d31&username=ada%40example.com&password=hunter2',
     reqCtype:'application/x-www-form-urlencoded',
     resp:{access_token:'eyJhbGciOiRS256.eyJz7Q...c1f0', token_type:'Bearer', expires_in:3600, refresh_token:'rt_8ac1f0e2'},
-    ctype:'application/json', size:196, auth:false, dbSql:"SELECT pw_hash FROM users WHERE email = $1", dbRows:1, dbMs:240,
+    ctype:'application/json', size:196, auth:false,
+    gqlResp:{accessToken:'eyJhbGciOiRS256.eyJz7Q...c1f0', tokenType:'Bearer', expires:3600}, dbSql:"SELECT pw_hash FROM users WHERE email = $1", dbRows:1, dbMs:240,
     frames:1, api0:'rest',
     gqlDoc:['mutation Token($clientId: String!, $user: String!, $password: String!) {','  issueToken(clientId: $clientId, user: $user, password: $password) { accessToken tokenType expires }','}'],
     gqlVars:{clientId:'acme-web', user:'ada@example.com', password:'hunter2'},
-    grpc:{svc:'auth.Identity', rpc:'IssueToken', type:'TokenRequest', rt:'TokenResponse', fields:{clientId:'acme-web', grant:'PASSWORD', user:'ada@example.com', password:'hunter2'}},
+    grpc:{svc:'acme.Identity', rpc:'IssueToken', type:'TokenRequest', rt:'TokenResponse', fields:{clientId:'acme-web', grant:'PASSWORD', user:'ada@example.com', password:'hunter2'}, reqBytes:46, respBytes:55},
     wsPath:'/ws/token', wsMsg:{op:'token', clientId:'acme-web', user:'ada@example.com'},
     srvNote:'bcrypt/argon2 compare costs ~240 ms — deliberately slow' },
 
@@ -186,36 +188,42 @@ const SCEN = [
     method:'GET', path:'/v1/weather', query:{lat:52.53, lon:13.42, units:'metric'},
     resp:{station:'BERLIN', observedAt:'2024-11-07T09:30:00Z', temperature:6.4, windKph:17.5, humidity:0.81, conditions:'overcast'},
     ctype:'application/json', size:139, dbSql:null, dbRows:0, dbMs:2, cache:true, frames:1, api0:'rest',
+    gqlResp:{station:'BERLIN', temperature:6.4, windKph:17.5, conditions:'overcast'},
     gqlDoc:['query Weather($lat: Float!, $lon: Float!, $units: String) {','  weather(lat: $lat, lon: $lon, units: $units) { station temperature windKph conditions }','}'],
     gqlVars:{lat:52.53, lon:13.42, units:'metric'},
-    grpc:{svc:'weather.Forecast', rpc:'Current', type:'WeatherRequest', rt:'WeatherResponse', fields:{lat:52.53, lon:13.42, units:'metric'}},
+    grpc:{svc:'acme.Forecast', rpc:'Current', type:'WeatherRequest', rt:'WeatherResponse', fields:{lat:52.53, lon:13.42, units:'metric'}, reqBytes:26, respBytes:67},
     wsPath:'/ws/weather', wsMsg:{op:'watch', lat:52.53, lon:13.42} },
 
   { id:'image', title:'Image download (byte stream)', blurb:'GET one binary resource: Content-Type + Content-Length carry the meaning, bytes stay opaque.',
     kind:'bytes', method:'GET', path:'/assets/logo.png', query:null,
     ctype:'image/png', size:41728, frames:1, api0:'rest',
+    gqlResp:{contentType:'image/png', bytes:41728},
     srvNote:'sendfile(2): zero-copy from page cache to the socket',
     gqlDoc:['query File($f: String!) {','  read(file: $f) { contentType bytes }','}'],
     gqlVars:{f:'logo.png'},
-    grpc:{svc:'media.Files', rpc:'Get', type:'FileRequest', rt:'FileResponse', fields:{file:'logo.png'}},
+    grpc:{svc:'acme.Files', rpc:'Get', type:'FileRequest', rt:'FileResponse', fields:{file:'logo.png'}, reqBytes:10, respBytes:41747},
     wsPath:'/ws/files', wsMsg:{op:'get', file:'logo.png'} },
 
   { id:'video', title:'Video download (chunked byte stream)', blurb:'3 MB body pushed in 8 chunks of 384 KiB; the client never holds the whole file.',
     kind:'stream', method:'GET', path:'/stream/movie.mp4', query:null,
     ctype:'application/octet-stream', chunks:8, chunkSize:393216, size:3145728, api0:'rest',
+    gqlResp:{bytes:3145728},
     gqlDoc:['query Stream($f: String!) {','  download(file: $f) { bytes }','}'],
     gqlVars:{f:'movie.mp4'},
-    grpc:{svc:'media.Files', rpc:'Download', type:'FileRequest', rt:'Chunk', stream:true, fields:{file:'movie.mp4'}},
+    grpc:{svc:'acme.Files', rpc:'Download', type:'FileRequest', rt:'Chunk', stream:true, fields:{file:'movie.mp4'}, reqBytes:11,
+     msgBytes:[393220,393224,393224,393224,393224,393224,393225,393225]},
     wsPath:'/ws/files', wsMsg:{op:'download', file:'movie.mp4'} },
 
   { id:'live', title:'Live feed (server push)', blurb:'One long-lived connection: the server keeps pushing updates as they arrive.',
-    kind:'frames', frames:6, frameBytes:148, method:'GET', path:'/ws/live', query:null,
+    kind:'frames', frames:6,  method:'GET', path:'/ws/live', query:null,
     ctype:'application/json', api0:'ws', sink:'stdout',
+    gqlResp:{name:'json-parser', downloads:1284900},
     dbSql:"SELECT name, downloads FROM packages WHERE updated_at > now() - interval '1 h' ORDER BY downloads DESC LIMIT 6",
     dbRows:6, dbMs:9,
     gqlDoc:['query Live($channel: String!) {','  watch(channel: $channel) { name downloads }','}'],
     gqlVars:{channel:'packages'},
-    grpc:{svc:'feed.Live', rpc:'Watch', type:'WatchRequest', rt:'Update', stream:true, fields:{channel:'packages', since:'2024-11-07T09:00:00Z'}},
+    grpc:{svc:'acme.Live', rpc:'Watch', type:'WatchRequest', rt:'Update', stream:true, fields:{channel:'packages', since:'2024-11-07T09:00:00Z'}, reqBytes:32,
+     msgBytes:[17,17,17,17,17,17]},
     wsPath:'/ws/live', wsMsg:{op:'subscribe', channel:'packages'} },
 ];
 
@@ -264,6 +272,7 @@ function resolve(sc, api){
   d.kind = sc.kind || 'json';
   d.nodb = !sc.dbSql && (d.kind === 'bytes' || d.kind === 'stream');
   d.sink = sc.sink || 'file';
+  if (api === 'graphql' && sc.gqlResp) d.kind = 'json';   // a GraphQL field returns JSON metadata, not a byte stream
   d.eff  = api === 'ws' ? 'frames' : (d.kind === 'frames' ? 'stream' : d.kind);
   d.count = api === 'ws' ? (d.kind === 'stream' ? sc.chunks : (d.kind === 'frames' ? sc.frames : (sc.id === 'search' ? 3 : 1)))
           : (d.kind === 'stream' ? sc.chunks : (d.kind === 'frames' ? sc.frames : 1));
@@ -274,13 +283,17 @@ function resolve(sc, api){
   d.chunkSize = sc.chunkSize || 0;
   d.dbSql = sc.dbSql || null; d.dbRows = sc.dbRows || 0; d.dbMs = sc.dbMs || 0;
   d.cache = !!sc.cache; d.auth = sc.auth !== false; d.srvNote = sc.srvNote || null;
-  d.resp  = sc.resp || null;
+  d.resp  = (api === 'graphql' && sc.gqlResp) ? sc.gqlResp : (sc.resp || null);
+  d.gqlField = ((sc.gqlDoc[1] || '').trim().match(/[A-Za-z_][A-Za-z0-9_]*/) || ['field'])[0];
   d.respWire = d.resp ? jsonWire(d.resp) : (d.kind === 'bytes' ? '<'+bytesOf(sc.size)+' image/png>' : '<stream>');
   // the exact bytes the server will put in the body, so content-length can never
   // disagree with the body the trace prints
-  d.respBody = d.resp ? (api === 'graphql' ? '{"data":' + jsonWire(d.resp) + '}' : jsonWire(d.resp)) : null;
+  d.respBody = d.resp ? (api === 'graphql' ? '{"data":' + jsonWire({ [d.gqlField]: d.resp }) + '}' : jsonWire(d.resp)) : null;
   if (d.respBody) d.size = utf8(d.respBody);
-  if (d.kind === 'frames'){ d.chunkSize = sc.frameBytes || 148; d.size = (sc.frames || 6) * (sc.frameBytes || 148); }
+  if (d.kind === 'frames'){                 // frame sizes measured from the payload text, not assumed
+    const fs = Array.from({ length: sc.frames || 6 }, (_, i) => utf8(payloadText(d, i)));
+    d.chunkSize = fs[0]; d.size = fs.reduce((a, b) => a + b, 0);
+  }
 
   if (api === 'rest'){
     d.method = sc.method;
@@ -308,7 +321,7 @@ function resolve(sc, api){
     d.docJava = '"' + sc.gqlDoc.join(' ") +\n    (') + '"';
     d.docC = '"""\n' + sc.gqlDoc.join('\n') + '\n"';
     d.varsPy = pyObj(sc.gqlVars); d.varsJs = jsObj(sc.gqlVars);
-    d.bodyWire = jsonWire({ query: sc.gqlDoc.join(' '), variables: sc.gqlVars });
+    d.bodyWire = jsonWire({ query: sc.gqlDoc.join('\n'), variables: sc.gqlVars });
     d.bodyBytes = utf8(d.bodyWire); d.ctypeReq = 'application/json';
   }
   if (api === 'grpc'){
@@ -316,14 +329,17 @@ function resolve(sc, api){
     d.fields = sc.grpc.fields; d.streamRpc = !!sc.grpc.stream;
     d.path = '/' + sc.grpc.svc + '/' + sc.grpc.rpc;
     d.method = 'POST';
-    d.bodyBytes = 34 + (d.kind === 'bytes' ? sc.size : 0);
+    // measured by grpcio's serializer in lab/server_grpc.py; +5 = the length-prefixed frame
+    d.grpcReq = sc.grpc.reqBytes; d.grpcResp = sc.grpc.respBytes || null; d.grpcMsg = sc.grpc.msgBytes || null;
+    d.bodyBytes = d.grpcReq + 5;
+    d.size = d.grpcResp ? d.grpcResp + 5
+           : d.grpcMsg.reduce((a, b) => a + b + 5, 0);
     d.fieldsPy = pyObj(sc.grpc.fields); d.fieldsJs = jsObj(sc.grpc.fields);
     d.fieldsJava = Object.values(sc.grpc.fields).map(jLit).join(', ');
     d.fieldsC = Object.entries(sc.grpc.fields).map(([k,v]) => cap(k)+' = '+cLit(v)).join(', ');
   }
-  d.gqlField = ((sc.gqlDoc[1] || '').trim().match(/[A-Za-z_][A-Za-z0-9_]*/) || ['field'])[0];
   d.gqlCap = cap(d.gqlField);
-  d.bytesLabel = (d.bodyWire ? bytesOf(d.bodyWire.length) + ' body' : api === 'graphql' ? bytesOf(JSON.stringify({ query: d.doc.join(' '), variables: d.vars })) + ' body' : 'no request body');
+  d.bytesLabel = (d.bodyWire ? bytesOf(d.bodyBytes) + ' body' : api === 'graphql' ? bytesOf(utf8(JSON.stringify({ query: d.doc.join('\n'), variables: d.vars }))) + ' body' : 'no request body');
   if (api === 'ws'){
     d.wsUrl = 'wss://' + HOST + d.wsPath;
     d.msg = sc.wsMsg; d.msgPy = pyObj(sc.wsMsg); d.msgJs = jsObj(sc.wsMsg);
@@ -1148,9 +1164,13 @@ function traceMsg(key, d, i, n){
 function wireEvents(d, P){
   const E = [];
   const push = (p, txt, short) => E.push({ p, side:'wire', txt, short });
-  const frame = (len) => 'DATA  len ' + len + '  | 00 00 00 00 ' + (len >>> 24).toString(16) + ' <protobuf ' + len + ' bytes>';
-  const reqBytes = d.bodyWire ? d.bodyWire.length : (d.api === 'graphql' ? JSON.stringify({ query: d.doc.join(' '), variables: d.vars }).length : 0);
-  const grpcBytes = d.api === 'grpc' ? 34 + (d.kind === 'bytes' ? d.size : 0) : 0;
+  const frame = (len) => {
+    const p = [(len >>> 24) & 255, (len >>> 16) & 255, (len >>> 8) & 255, len & 255]
+      .map(b => b.toString(16).padStart(2, '0')).join(' ');
+    return 'DATA  ' + len + ' bytes  | 00 ' + p + '   flag=0 (not compressed) + uint32 length, then ' + len + ' protobuf bytes';
+  };
+  const reqBytes = d.api === 'grpc' ? d.grpcReq
+    : d.bodyWire ? utf8(d.bodyWire) : (d.api === 'graphql' ? utf8(JSON.stringify({ query: d.doc.join('\n'), variables: d.vars })) : 0);
 
   if (d.api === 'ws'){
     push(30, 'GET ' + d.wsPath + ' HTTP/1.1\nHost: ' + d.host + '\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Version: 13\nSec-WebSocket-Key: dGhlIjYtOHhcYpR9TQwAq/BC==', 'upgrade request');
@@ -1171,16 +1191,16 @@ function wireEvents(d, P){
   if (d.api === 'grpc'){
     push(39, ':method POST   :scheme http   :authority ' + d.host + '   :path ' + d.path, ':path');
     push(40.5, 'content-type: application/grpc   grpc-encoding: identity   user-agent: grpc-python/1.60', 'grpc metadata');
-    push(42, frame(grpcBytes) + '\n  05 00 00 00 22  = 5-byte prefix: compressed-flag + uint32 length', 'request message');
+    push(42, frame(d.grpcReq), 'request message');
     push(P['s.headers'] + 2, 'HEADERS  :status 200   content-type: application/grpc', 'response HEADERS');
     if (d.eff === 'stream'){
       for (let i = 0; i < d.count; i++){
-        push(P['s.writeChunk'] + 0.4 + i*1.5, frame(d.chunkSize) + '   message ' + (i+1) + '/' + d.count, 'message ' + (i+1) + '/' + d.count);
+        push(P['s.writeChunk'] + 0.4 + i*1.5, frame(d.grpcMsg ? d.grpcMsg[i] : d.chunkSize) + '   message ' + (i+1) + '/' + d.count, 'message ' + (i+1) + '/' + d.count);
         push(P['s.writeChunk'] + 0.9 + i*1.5, 'client: DATA frame ' + (i+1) + '/' + d.count + ' decoded into ' + d.rt, 'decode ' + (i+1));
       }
       push(P['s.close'] - 0.5, 'HEADERS (END_STREAM)   grpc-status: 0   grpc-message: ""', 'trailers');
     } else {
-      push(P['s.body'] + 2, frame(grpcBytes), 'response message');
+      push(P['s.body'] + 2, frame(d.grpcResp), 'response message');
       push(P['c.recvHeaders'] - 2, 'TRAILERS  grpc-status: 0   grpc-message: ""   (a failure is a trailer, not a status code)', 'trailers');
     }
     push(P['c.close'] - 0.5, 'socket stays open; other RPCs multiplex on the same connection', 'multiplexed');
