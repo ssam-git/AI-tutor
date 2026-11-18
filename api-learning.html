@@ -26,7 +26,9 @@ body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"S
   height:100vh;height:100dvh;
   padding:calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left))}
 .mono{font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;font-size:12.5px;line-height:1.6}
-button.glyph{font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;letter-spacing:-.04em}
+#runRow button{display:inline-flex;align-items:center;justify-content:center;gap:.45em}
+.ic{width:15px;height:15px;flex:0 0 auto;fill:currentColor;shape-rendering:geometricPrecision}
+#runBtn .ic{width:17px;height:17px}
 button,select{font:inherit;color:var(--tx);background:var(--pane2);border:1px solid var(--line);border-radius:6px;
   padding:5px 9px;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 button.on,select.on{background:#23384f;border-color:var(--accent);color:#fff}
@@ -220,14 +222,14 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
     <details id="about" open>
       <summary>About this scenario</summary>
       <p id="desc"></p>
-      <p class="hint">space = run &nbsp;·&nbsp; &gt;| = step forward &nbsp;·&nbsp; &lt;| = step back &nbsp;·&nbsp; Notes / Explanations toggles the italic notes &nbsp;·&nbsp; R = rebuild after changing any selector &nbsp;·&nbsp; on a phone, swipe left / right between Client, Server and Trace</p>
+      <p class="hint">space = run &nbsp;·&nbsp; the two buttons after Run step one line forward / back (or &rarr; and &larr;) &nbsp;·&nbsp; Notes / Explanations toggles the italic notes &nbsp;·&nbsp; R = rebuild after changing any selector &nbsp;·&nbsp; on a phone, swipe left / right between Client, Server and Trace</p>
     </details>
   </div>
   <div id="runCol">
     <div id="runRow">
-      <button id="runBtn">&#9654; Run</button>
-      <button id="nextBtn" class="glyph" title="step forward" aria-label="step forward">&gt;|</button>
-      <button id="prevBtn" class="glyph" title="step back" aria-label="step back">&lt;|</button>
+      <button id="runBtn" title="run to the end"><svg class=ic viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 2.6 13 8l-8.8 5.4z"/></svg><span>Run</span></button>
+      <button id="prevBtn" title="step back" aria-label="step back"><svg class=ic viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="2.3" height="10" rx="1.15"/><path d="M13 3 6.4 8 13 13z"/></svg></button>
+      <button id="nextBtn" title="step forward" aria-label="step forward"><svg class=ic viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3 9.6 8 3 13z"/><rect x="10.7" y="3" width="2.3" height="10" rx="1.15"/></svg></button>
       <button id="resetBtn">Reset</button>
       <button id="speedBtn" title="speed">Speed: normal</button>
       <button id="noteBtn" title="explanations">Explanations: on</button>
@@ -1535,7 +1537,7 @@ function regen(){
   state.svLines = serverFix(SERVER[state.sv](d).filter(x => x && typeof x.t === 'string'), state.sv, d);
   const built = buildSteps(state.clLines, state.svLines, d);
   state.steps = built.steps; state.cur = -1;
-  refreshChips(); renderCode(); renderTop(); renderTrace(); setActive();
+  refreshChips(); renderCode(); renderTop(); renderTrace(); setActive(); paintRun();
 }
 function renderCode(){
   const mk = (lines, lang) => lines.map((ln, i) =>
@@ -1626,7 +1628,7 @@ function advance(){
 function tick(){
   if (!state.playing) return;
   if (!advance()){
-    state.playing = false; el('runBtn').classList.remove('playing');
+    state.playing = false; paintRun();
     const last = state.steps[state.steps.length - 1];
     el('stat').textContent = 'finished: ' + state.steps.length + ' steps, ' + (last.t/1000).toFixed(2) + 's simulated';
     return;
@@ -1637,12 +1639,22 @@ function tick(){
 function play(){
   if (state.playing) return;
   if (state.cur >= state.steps.length - 1){ state.cur = -1; renderTrace(); setActive(); }
-  state.playing = true; el('runBtn').classList.add('playing'); el('stat').textContent = 'running...';
+  state.playing = true; paintRun(); el('stat').textContent = 'running...';
   tick();
 }
-function stop(){ state.playing = false; clearTimeout(state.timer); el('runBtn').classList.remove('playing'); }
+function stop(){ state.playing = false; clearTimeout(state.timer); paintRun(); }
+/* Run doubles as Pause while it is playing: icon and label follow the state */
+const ICON_PLAY  = '<svg class=ic viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 2.6 13 8l-8.8 5.4z"/></svg>';
+const ICON_PAUSE = '<svg class=ic viewBox="0 0 16 16" aria-hidden="true"><rect x="3.9" y="3" width="2.6" height="10" rx="1.2"/><rect x="9.5" y="3" width="2.6" height="10" rx="1.2"/></svg>';
+function paintRun(){
+  const done = state.cur >= state.steps.length - 1;
+  const b = el('runBtn');
+  b.innerHTML = (state.playing ? ICON_PAUSE : ICON_PLAY) + '<span>' + (state.playing ? 'Pause' : done ? 'Replay' : 'Run') + '</span>';
+  b.classList.toggle('playing', state.playing);
+  b.title = state.playing ? 'pause here' : done ? 'run again from the top' : 'run to the end';
+}
 
-el('runBtn').onclick = () => play();
+el('runBtn').onclick = () => { state.playing ? stop() : play(); };
 el('nextBtn').onclick = () => { stop(); advance(); };
 el('prevBtn').onclick = () => { stop(); state.cur = Math.max(-1, state.cur - 1); renderTrace(); setActive(); };
 el('resetBtn').onclick = () => { stop(); state.cur = -1; renderTrace(); setActive(); el('stat').textContent = 'reset — pick another language, API type or scenario and press Run'; };
@@ -1661,7 +1673,7 @@ document.addEventListener('keydown', (ev) => {
   const tag = (ev.target && ev.target.tagName || '').toLowerCase();
   if (tag === 'select' || tag === 'input' || tag === 'textarea') return;
   if (tag === 'button' && (ev.key === ' ' || ev.key === 'Enter')) return;  // let the focused control act on it
-  if (ev.key === ' '){ ev.preventDefault(); play(); }
+  if (ev.key === ' '){ ev.preventDefault(); el('runBtn').onclick(); }
   else if (ev.key === 'ArrowRight'){ ev.preventDefault(); el('nextBtn').onclick(); }
   else if (ev.key === 'ArrowLeft'){ ev.preventDefault(); el('prevBtn').onclick(); }
   else if (ev.key === 'r'){ ev.preventDefault(); regen(); }
