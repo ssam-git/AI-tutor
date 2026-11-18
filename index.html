@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="AI-tutor: a series of interactive, self-contained tutorials that run entirely in the browser. Start with the API Learning Sandbox — watch one API call travel through client code, the wire, and server code.">
+<meta name="theme-color" content="#0c1017">
+<meta property="og:type" content="website">
+<meta property="og:title" content="AI-tutor — interactive tutorials in the browser">
+<meta property="og:description" content="Self-contained, AI-built tutorials you run in the browser: no install, no account, no server. Featuring the API Learning Sandbox.">
+<meta property="og:url" content="https://ssam-git.github.io/AI-tutor/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c1017'/%3E%3Cpath d='M6 11h9M6 16h13M6 21h7' stroke='%2357c8ff' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M20 8l5 5-5 5' fill='none' stroke='%23ffc861' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<title>AI-tutor — interactive tutorials in the browser</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0c1017; --pane:#141a24; --pane2:#1a222e; --line:#26303d;
+  --tx:#d5deea; --dim:#7f8b9c; --accent:#4f8cff;
+  --client:#57c8ff; --server:#68e08c; --wire:#ffc861;
+  --maxw:1120px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--tx);line-height:1.55;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  background-image:radial-gradient(1100px 520px at 12% -8%,rgba(79,140,255,.10),transparent 60%),
+                   radial-gradient(900px 460px at 92% 4%,rgba(255,200,97,.06),transparent 60%)}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:22px 18px 44px}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.skip{position:absolute;left:-9999px}
+.skip:focus{left:12px;top:10px;background:var(--pane2);padding:8px 12px;border-radius:8px;z-index:9}
+
+/* ---------- masthead ---------- */
+header.top{display:flex;flex-wrap:wrap;gap:14px 24px;align-items:flex-end;justify-content:space-between;
+  padding-bottom:18px;border-bottom:1px solid var(--line)}
+.brand{display:flex;gap:12px;align-items:center}
+.logo{width:40px;height:40px;flex:0 0 auto;border:1px solid var(--line);border-radius:10px;background:var(--pane)}
+h1{margin:0;font-size:clamp(21px,4.4vw,30px);letter-spacing:-.01em}
+.tag{margin:2px 0 0;color:var(--dim);font-size:14px;max-width:56ch}
+.links{display:flex;gap:8px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-size:13.5px;
+  background:var(--pane2);border:1px solid var(--line);border-radius:8px;padding:9px 13px;color:var(--tx)}
+.btn:hover{border-color:#3c4b5e}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:650}
+.btn.big{font-size:15px;padding:12px 18px}
+
+/* ---------- section headings ---------- */
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);margin:34px 0 12px;font-weight:650}
+h2 .count{color:#55637a;font-weight:400}
+
+/* ---------- cards ---------- */
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(290px,1fr))}
+.card{position:relative;display:flex;flex-direction:column;gap:10px;background:var(--pane);
+  border:1px solid var(--line);border-radius:12px;padding:16px 16px 14px;text-decoration:none;color:inherit}
+a.card:hover{border-color:#3c4b5e;background:#161e29}
+.card::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;border-radius:12px 12px 0 0;
+  background:linear-gradient(90deg,var(--c1),var(--c2))}
+.card h3{margin:0;font-size:17.5px;letter-spacing:-.01em}
+.card p{margin:0;color:var(--dim);font-size:13.5px}
+.card .meta{margin-top:auto;display:flex;flex-wrap:wrap;gap:6px;padding-top:4px}
+.pill{font-size:11.5px;padding:3px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+.pill.num{color:var(--tx)}
+.go{color:var(--accent);font-size:13.5px;font-weight:600}
+a.card:hover .go{text-decoration:underline}
+.facts{list-style:none;margin:2px 0 0;padding:0;display:grid;gap:5px}
+.facts li{font-size:13px;color:var(--dim);padding-left:16px;position:relative}
+.facts li::before{content:"";position:absolute;left:0;top:.55em;width:7px;height:7px;border-radius:50%;background:var(--c1)}
+.facts b{color:var(--tx);font-weight:600}
+.status{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#8fd6a4}
+.soon{opacity:.62;cursor:default}
+.soon .status{color:#c8b489}
+.soon .facts li::before{background:#4b5766}
+.soon .pill{border-style:dashed}
+
+/* ---------- how-it-was-made ---------- */
+.note{background:var(--pane);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:13.5px;color:var(--dim)}
+.note b{color:var(--tx)}
+.note code{font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;font-size:12.5px;
+  background:var(--pane2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:#e8a06a}
+footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;
+  gap:10px 20px;justify-content:space-between;font-size:12.5px;color:var(--dim)}
+@media (max-width:520px){
+  .wrap{padding:16px 12px 34px}
+  header.top{align-items:flex-start}
+  .btn{padding:11px 13px}
+  .grid{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none;animation:none}}
+</style>
+</head>
+<body>
+<a class="skip" href="#projects">skip to projects</a>
+<div class="wrap">
+
+<header class="top">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="7" fill="#141a24"></rect>
+      <path d="M6 11h9M6 16h13M6 21h7" stroke="#57c8ff" stroke-width="2.5" stroke-linecap="round"></path>
+      <path d="M20 8l5 5-5 5" fill="none" stroke="#ffc861" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+    </svg>
+    <div>
+      <h1>AI-tutor</h1>
+      <p class="tag">Interactive tutorials about how software actually works — each one a single HTML file that
+        runs in your browser. No install, no account, nothing sent to a server.</p>
+    </div>
+  </div>
+  <nav class="links" aria-label="site links">
+    <a class="btn primary" href="api-learning.html">Open the API sandbox →</a>
+    <a class="btn" href="https://github.com/ssam-git/AI-tutor">Source on GitHub</a>
+  </nav>
+</header>
+
+<main id="projects">
+  <h2>Projects <span class="count">— 1 live</span></h2>
+  <div class="grid">
+
+    <!-- ==== to add a project: copy one <a class="card"> block, point href at the new .html file, ==== -->
+    <!-- ==== change --c1/--c2 (the colour strip), the title, blurb, facts and pills. Nothing else. ==== -->
+    <a class="card" href="api-learning.html" style="--c1:#57c8ff;--c2:#68e08c">
+      <span class="status">live</span>
+      <h3>API Learning Sandbox</h3>
+      <p>Pick a scenario and press Run. Watch one API call travel through <b>client code → the wire →
+        server code → the wire → client code</b>, one step at a time, with the executing line highlighted in
+        both panes and a timestamped request/response trace underneath.</p>
+      <ul class="facts">
+        <li><b>4 API types</b>, same scenario: REST, GraphQL, gRPC, WebSocket</li>
+        <li><b>4 languages</b> on each side: Python, JavaScript, Java, C#</li>
+        <li><b>6 scenarios</b>: package search, token exchange, weather + cache, image bytes,
+          3&nbsp;MB chunked video, live server push</li>
+        <li><b>Real detail</b>: headers, status codes, Content-Length, TLS/keep-alive, TCP frames,
+          <code>sendfile(2)</code>, bcrypt cost, cache hits</li>
+        <li>Step forward/back, slow-mo or instant, explanations on/off; swipe between panels on a phone</li>
+      </ul>
+      <span class="meta">
+        <span class="pill num">6 scenarios</span><span class="pill num">4 API types</span>
+        <span class="pill num">4 languages</span><span class="pill">keyboard + touch</span>
+        <span class="pill">no network calls</span>
+      </span>
+      <span class="go">Open the sandbox →</span>
+    </a>
+
+  </div>
+
+  <h2>Planned <span class="count">— rough ideas, no dates</span></h2>
+  <div class="grid">
+    <div class="card soon" style="--c1:#ffc861;--c2:#ffb445" aria-disabled="true">
+      <span class="status">coming soon</span>
+      <h3>Regex Playground</h3>
+      <p>Live match highlighting plus a step-through of what the engine is doing — backtracking, greedy vs
+        lazy, anchors, capture groups.</p>
+      <span class="meta"><span class="pill">automata</span><span class="pill">text</span></span>
+    </div>
+    <div class="card soon" style="--c1:#68e08c;--c2:#4f8cff" aria-disabled="true">
+      <span class="status">coming soon</span>
+      <h3>Git Visualiser</h3>
+      <p>Commit graph you drive: branch, rebase, cherry-pick, reset — with the reflog and working tree
+        explained at each step.</p>
+      <span class="meta"><span class="pill">git</span><span class="pill">DAG</span></span>
+    </div>
+    <div class="card soon" style="--c1:#c58ae6;--c2:#57c8ff" aria-disabled="true">
+      <span class="status">coming soon</span>
+      <h3>SQL Query Planner</h3>
+      <p>Run queries against a tiny in-browser dataset and see seq scan vs index scan, row estimates and
+        why an index stops helping.</p>
+      <span class="meta"><span class="pill">SQL</span><span class="pill">indexes</span></span>
+    </div>
+  </div>
+
+  <h2>How these are built</h2>
+  <div class="note">
+    Every tutorial is <b>one self-contained HTML file</b> — plain HTML, CSS and JavaScript, no build step, no
+    dependencies, no analytics, no network requests. They are written with an AI assistant and then reviewed
+    and fixed by hand, which is why each one fits in a single file you can read top to bottom and save to
+    your desktop. Serving them is just static files: push to <code>main</code> and GitHub Pages republishes.
+  </div>
+</main>
+
+<footer>
+  <span>AI-tutor — a series of AI-assisted, single-file interactive tutorials.</span>
+  <span><a href="https://github.com/ssam-git/AI-tutor">ssam-git/AI-tutor</a> · <a href="./">index</a></span>
+</footer>
+
+</div>
+</body>
+</html>

@@ -2,21 +2,32 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Interactive, in-browser simulator that shows one API call travelling through client code, the wire, and server code. REST, GraphQL, gRPC and WebSocket side by side in Python, JavaScript, Java and C#.">
+<meta name="theme-color" content="#0c1017">
+<meta property="og:type" content="website">
+<meta property="og:title" content="API Learning Sandbox — client / server / wire simulator">
+<meta property="og:description" content="Watch one API call travel: client code → wire → server code → wire → client code. Runs entirely in your browser.">
+<meta property="og:url" content="https://ssam-git.github.io/AI-tutor/api-learning.html">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c1017'/%3E%3Cpath d='M6 11h9M6 16h13M6 21h7' stroke='%2357c8ff' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M20 8l5 5-5 5' fill='none' stroke='%23ffc861' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <title>API Learning Sandbox — client / server / wire simulator</title>
 <style>
 :root{
+  color-scheme:dark;
   --bg:#0c1017; --pane:#141a24; --pane2:#1a222e; --line:#26303d;
   --tx:#d5deea; --dim:#7f8b9c; --client:#57c8ff; --server:#68e08c; --wire:#ffc861;
   --hi:#ffb445; --hi-bg:rgba(255,180,69,.16); --accent:#4f8cff;
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
+html{overscroll-behavior:none}
 body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  display:grid;grid-template-rows:auto minmax(0,1fr) minmax(110px,25vh);gap:8px;padding:8px;overflow:hidden}
+  display:grid;grid-template-rows:auto minmax(0,1fr) minmax(110px,25vh);gap:8px;overflow:hidden;
+  height:100vh;height:100dvh;
+  padding:calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left))}
 .mono{font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;font-size:12.5px;line-height:1.6}
 button,select{font:inherit;color:var(--tx);background:var(--pane2);border:1px solid var(--line);border-radius:6px;
-  padding:5px 9px;cursor:pointer}
+  padding:5px 9px;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 button.on,select.on{background:#23384f;border-color:var(--accent);color:#fff}
 button:hover{border-color:#3c4b5e}
 h1{font-size:15px;margin:0;font-weight:650}
@@ -28,7 +39,14 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
 .pick{display:flex;gap:7px;align-items:center;margin-top:6px}
 .pick label{font-size:11px;color:var(--dim)}
 .pick select{min-width:21ch;text-align:left}
-#desc{margin:.35em 0 0;font-size:11.5px;color:var(--dim);line-height:1.45;max-width:130ch}
+.back{font-size:11.5px;color:var(--dim);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:4px 8px;white-space:nowrap}
+.back:hover{color:var(--tx);border-color:#3c4b5e}
+#topRow{display:flex;gap:14px;align-items:baseline;justify-content:space-between}
+#about{margin-top:2px}
+#about>summary{display:none}
+#desc{margin:.35em 0 0}
+.hint{margin:.4em 0 0}
+#desc{font-size:11.5px;color:var(--dim);line-height:1.45;max-width:130ch}
 #desc b{color:var(--tx);font-weight:600}
 #desc .api{color:var(--wire)}
 #runCol{display:flex;flex-direction:column;gap:7px;align-items:flex-end}
@@ -57,10 +75,10 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
 #codeCli,#codeSrv{overflow:auto;padding:8px 10px;min-height:0;flex:1;position:relative}
 .hint{font-size:11px;color:var(--dim);margin:.4em 0 0}
 .ln{display:grid;grid-template-columns:2.6em 1fr;gap:0;white-space:pre}
-.ln>num{color:#4b5766;text-align:right;padding-right:.7em;border-right:1px solid transparent}
-.ln>src{white-space:pre;padding-left:.7em}
+.ln>.num{color:#4b5766;text-align:right;padding-right:.7em;border-right:1px solid transparent}
+.ln>.src{white-space:pre;padding-left:.7em}
 .ln.cur{background:var(--hi-bg)}
-.ln.cur>num{color:var(--hi);border-right-color:var(--hi)}
+.ln.cur>.num{color:var(--hi);border-right-color:var(--hi)}
 .pane.dimmed #codeCli,.pane.dimmed #codeSrv{opacity:.45;transition:opacity .25s}
 .tk-c{color:#6c7a8d;font-style:italic}
 .tk-s{color:#e8a06a}
@@ -92,23 +110,123 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
 .noteblk{color:#93a2b6;background:rgba(80,140,255,.05);border-left-color:#2b3b52;font-style:italic}
 .noteblk.hide{display:none}
 @keyframes fade{from{opacity:0;transform:translateY(2px)}to{opacity:1}}
-@media (max-width:860px){#mid{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr)}body{grid-template-rows:auto minmax(0,1fr) minmax(130px,30vh)}#top{grid-template-columns:1fr}}
+/* ---------- panel tabs (mobile only) ---------- */
+#tabs{display:none;gap:6px;align-items:stretch}
+#tabs button{flex:1 1 0;min-width:0}
+#tabs #followBtn{flex:0 0 auto;font-size:11px;padding:0 10px}
+
+/* ---------- coarse pointers: big enough to tap ---------- */
+@media (pointer:coarse){
+  button,select{min-height:40px;padding:8px 11px}
+  select{font-size:16px}          /* keeps iOS Safari from zooming on focus */
+  .pane>header .sel button{min-height:34px;padding:6px 9px}
+  .back{display:inline-flex;align-items:center;min-height:34px}
+  #tabs #followBtn{min-height:34px}
+}
+
+/* ---------- narrow screens: one panel at a time ---------- */
+@media (max-width:860px){
+  body{grid-template-rows:auto auto minmax(0,1fr);gap:6px}
+  #top{grid-template-columns:minmax(0,1fr);gap:8px}
+  #topRow{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+  #topRow h1{min-width:0}
+  h1{font-size:14px}
+  h1 small{display:block;margin-top:3px;font-size:11px}
+  #about>summary{display:list-item;cursor:pointer;font-size:11.5px;color:var(--dim);padding:6px 0;min-height:34px}
+  #about>summary:hover{color:var(--tx)}
+  #about[open]>summary{color:var(--tx)}
+  .pick{margin-top:0}
+  .pick select{flex:1 1 auto;min-width:0;font-size:16px}
+  #runCol{align-items:stretch}
+  #runRow{justify-content:stretch}
+  #runRow button{flex:1 1 auto;min-height:42px;padding:6px 8px;font-size:12px}
+  #runBtn{flex:1 1 100%;min-height:46px;font-size:15px}
+  /* the chips repeat what the panel headers already say; keep only warnings */
+  #chips .chip{display:none}
+  #chips .chip.warn{display:inline-flex}
+  #tabs{display:flex}
+  #tabs button{min-height:40px}
+  #mid{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+  #mid .pane,#bot{display:none}
+  body[data-view=trace] #mid{display:none}
+  body[data-view=cli] #paneCli,body[data-view=srv] #paneSrv,body[data-view=trace] #bot{display:flex}
+  .pane>header{gap:4px 8px;padding:6px 8px}
+  .pane>header .who{font-size:12.5px}
+  .pane>header .sel{flex:1 1 100%;flex-wrap:wrap;gap:4px}
+  .pane>header .meta{font-size:11px}
+  #pos{font-size:11px}
+  #codeCli,#codeSrv{padding:6px 8px}
+  .ln{white-space:pre-wrap}
+  .ln>.src{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
+  #trace{font-size:12px;padding:6px 8px}
+  #bot>header .legend{display:none}
+  .chip{font-size:10.5px}
+  .row{grid-template-columns:4.2em 4.4em minmax(0,1fr);gap:.3em}
+  .wireblk,.noteblk{margin-left:1.1em}
+}
+
+/* ---------- short screens (small phones, portrait): shed chrome ---------- */
+@media (max-width:860px) and (max-height:700px){
+  body{gap:5px}
+  #top{gap:6px}
+  #runRow{gap:5px}
+  h1 small{display:none}
+  h1{font-size:13.5px}
+  #about>summary{min-height:28px;padding:3px 0;font-size:11px}
+  .pick select{min-height:38px}
+  #runRow button{min-height:40px;padding:5px 7px;font-size:11.5px}
+  #runBtn{min-height:44px;font-size:14px}
+  #tabs button{min-height:38px;font-size:12.5px}
+  #stat{font-size:11px}
+}
+
+/* ---------- short screens: shrink the panel header, then shed chrome ---------- */
+@media (max-width:860px) and (max-height:620px){
+  .pane>header{padding:4px 8px;gap:3px 6px}
+  .pane>header .who{font-size:12px}
+  .pane>header .sel{flex:1 1 auto;flex-wrap:wrap;gap:3px}
+  .pane>header .sel button{min-height:30px;padding:4px 7px;font-size:11px}
+  .pane>header .meta{display:none}
+  #runRow button{min-height:36px;padding:4px 5px;font-size:11px}
+  #runBtn{min-height:40px;font-size:13px}
+}
+
+/* ---------- landscape phones: use the width for the controls ---------- */
+@media (min-width:600px) and (max-width:860px) and (max-height:560px){
+  body{gap:4px}
+  #top{grid-template-columns:minmax(0,1fr) auto;gap:4px 12px}
+  #runCol{align-items:flex-end}
+  #runRow{flex-wrap:wrap;justify-content:flex-end;max-width:34em}
+  #runBtn{flex:0 0 5.5em;min-height:40px;font-size:13px}
+  #tabs{gap:4px}
+  #tabs button{min-height:34px;font-size:12px}
+}
+@media (prefers-reduced-motion:reduce){
+  .row{animation:none}
+  .pane.dimmed #codeCli,.pane.dimmed #codeSrv{transition:none}
+}
 </style>
 </head>
 <body>
 
 <div id="top">
   <div>
-    <h1>API Learning Sandbox <small>watch one API call travel: client code → wire → server code → wire → client code</small></h1>
+    <div id="topRow">
+      <h1>API Learning Sandbox <small>watch one API call travel: client code → wire → server code → wire → client code</small></h1>
+      <a class="back" href="./" title="more AI-built tutorials">&larr; all projects</a>
+    </div>
     <div class="pick"><label for="exSel">Scenario</label><select id="exSel" title="pick a scenario"></select></div>
-    <p id="desc"></p>
-    <p class="hint">space = run &nbsp;·&nbsp; &#9663;&#9663; = step forward &nbsp;·&nbsp; &#9662;&#9662; = step back &nbsp;·&nbsp; Explanations toggles the italic notes &nbsp;·&nbsp; R = rebuild after changing any selector</p>
+    <details id="about" open>
+      <summary>About this scenario</summary>
+      <p id="desc"></p>
+      <p class="hint">space = run &nbsp;·&nbsp; &#9663;&#9663; = step forward &nbsp;·&nbsp; &#9662;&#9662; = step back &nbsp;·&nbsp; Notes / Explanations toggles the italic notes &nbsp;·&nbsp; R = rebuild after changing any selector &nbsp;·&nbsp; on a phone, swipe left / right between Client, Server and Trace</p>
+    </details>
   </div>
   <div id="runCol">
     <div id="runRow">
       <button id="runBtn">&#9654; Run</button>
-      <button id="nextBtn" title="step forward">&#9663;&#9663;</button>
-      <button id="prevBtn" title="step back">&#9662;&#9662;</button>
+      <button id="nextBtn" title="step forward" aria-label="step forward">&#9663;&#9663;</button>
+      <button id="prevBtn" title="step back" aria-label="step back">&#9662;&#9662;</button>
       <button id="resetBtn">Reset</button>
       <button id="speedBtn" title="speed">Speed: normal</button>
       <button id="noteBtn" title="explanations">Explanations: on</button>
@@ -116,6 +234,13 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
     <div id="stat"></div>
     <div id="chips"></div>
   </div>
+</div>
+
+<div id="tabs" role="tablist" aria-label="Which panel to show">
+  <button type="button" role="tab" data-view="cli" aria-selected="false">Client code</button>
+  <button type="button" role="tab" data-view="srv" aria-selected="false">Server code</button>
+  <button type="button" role="tab" data-view="trace" aria-selected="false">Trace</button>
+  <button type="button" id="followBtn" title="switch to whichever code panel is running">Follow: on</button>
 </div>
 
 <div id="mid">
@@ -1313,7 +1438,21 @@ function serverFix(lines, lang, d){
    UI state + playback
    ============================================================ */
 const el = id => document.getElementById(id);
-const state = { si:0, api:'rest', cl:'python', sv:'js', speed:1, notes:true, cur:-1, playing:false, timer:null, steps:[], clLines:[], svLines:[] };
+const state = { si:0, api:'rest', cl:'python', sv:'js', speed:1, notes:true, cur:-1, playing:false, timer:null, steps:[], clLines:[], svLines:[], view:'cli', follow:true };
+const narrow = () => window.matchMedia('(max-width:860px)').matches;
+const noteWord = () => narrow() ? 'Notes' : 'Explanations';
+
+/* one panel at a time on phones: client | server | trace */
+function applyView(v){
+  state.view = v;
+  document.body.dataset.view = v;
+  document.querySelectorAll('#tabs [data-view]').forEach(b => {
+    const on = b.dataset.view === v;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+}
+function setView(v){ applyView(v); setActive(); }
 
 function chipGroup(host, items, cls){
   host.innerHTML = ''; host._items = items;
@@ -1384,7 +1523,7 @@ function renderTop(){
     '<span class=chip>server <b>' + LANGS[state.sv].name + '</b></span>' +
     '<span class=chip>API type <b>' + API_NAME[state.api] + '</b></span>' +
     '<span class=chip>payload <b>' + payload + '</b></span>' +
-    (pair ? '<span class=chip warn>unusual pairing <b>' + odd + '</b></span>' : '');
+    (pair ? '<span class="chip warn">unusual pairing <b>' + odd + '</b></span>' : '');
 }
 function renderTrace(){
   const t = el('trace');
@@ -1429,6 +1568,7 @@ function setActive(){
   const s = state.steps[state.cur];
   if (!s) return;
   if (s.side === 'wire'){ el('pos').textContent = 'on the wire: no code running, bytes in flight'; return; }
+  if (narrow() && state.follow && state.view !== 'trace') applyView(s.side === 'client' ? 'cli' : 'srv');
   const box = s.side === 'client' ? el('codeCli') : el('codeSrv');
   el(s.side === 'client' ? 'paneSrv' : 'paneCli').classList.add('dimmed');
   const node = box.querySelector('[data-line="' + s.line + '"]');
@@ -1469,20 +1609,58 @@ el('nextBtn').onclick = () => { stop(); advance(); };
 el('prevBtn').onclick = () => { stop(); state.cur = Math.max(-1, state.cur - 1); renderTrace(); setActive(); };
 el('resetBtn').onclick = () => { stop(); state.cur = -1; renderTrace(); setActive(); el('stat').textContent = 'reset — pick another language, API type or scenario and press Run'; };
 const SPEEDS = [{ v:1, l:'normal' }, { v:0.35, l:'slow' }, { v:2.5, l:'fast' }, { v:0, l:'instant' }];
+const SHORTSPD = { 1:'1×', 0.35:'½×', 2.5:'3×', 0:'all' };
+const speedWord = s => narrow() ? 'Speed ' + SHORTSPD[s.v] : 'Speed: ' + s.l;
 el('speedBtn').onclick = () => {
   const i = SPEEDS.findIndex(s => s.v === state.speed);
   const nx = SPEEDS[(i + 1) % SPEEDS.length];
-  state.speed = nx.v; el('speedBtn').textContent = 'Speed: ' + nx.l;
+  state.speed = nx.v; el('speedBtn').textContent = speedWord(nx);
   if (nx.v === 0){ stop(); state.cur = state.steps.length - 1; renderTrace(); setActive(); el('stat').textContent = 'all ' + state.steps.length + ' steps shown at once'; }
   else if (state.playing){ clearTimeout(state.timer); tick(); }
 };
-el('noteBtn').onclick = () => { state.notes = !state.notes; el('noteBtn').textContent = 'Explanations: ' + (state.notes ? 'on' : 'off'); renderTrace(); };
+el('noteBtn').onclick = () => { state.notes = !state.notes; el('noteBtn').textContent = noteWord() + ': ' + (state.notes ? 'on' : 'off'); renderTrace(); };
 document.addEventListener('keydown', (ev) => {
+  const tag = (ev.target && ev.target.tagName || '').toLowerCase();
+  if (tag === 'select' || tag === 'input' || tag === 'textarea') return;
+  if (tag === 'button' && (ev.key === ' ' || ev.key === 'Enter')) return;  // let the focused control act on it
   if (ev.key === ' '){ ev.preventDefault(); play(); }
   else if (ev.key === 'ArrowRight'){ ev.preventDefault(); el('nextBtn').onclick(); }
   else if (ev.key === 'ArrowLeft'){ ev.preventDefault(); el('prevBtn').onclick(); }
   else if (ev.key === 'r'){ ev.preventDefault(); regen(); }
 });
+
+/* ---------- mobile panel switching + swipe ---------- */
+el('followBtn').onclick = () => {
+  state.follow = !state.follow;
+  el('followBtn').textContent = 'Follow: ' + (state.follow ? 'on' : 'off');
+  el('followBtn').classList.toggle('on', state.follow);
+};
+document.querySelectorAll('#tabs [data-view]').forEach(b => { b.onclick = () => setView(b.dataset.view); });
+let tX = 0, tY = 0;
+const touchOf = ev => (ev.changedTouches && ev.changedTouches[0]) || (ev.touches && ev.touches[0]);
+function swipeStart(ev){ const t = touchOf(ev); if (!t) return; tX = t.clientX; tY = t.clientY; }
+function swipeEnd(ev){
+  if (!narrow()) return;
+  const t = touchOf(ev); if (!t) return;
+  const dx = t.clientX - tX, dy = t.clientY - tY;
+  if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * .7) return;
+  const order = ['cli', 'srv', 'trace'];
+  const i = Math.max(0, Math.min(order.length - 1, order.indexOf(state.view) + (dx < 0 ? 1 : -1)));
+  setView(order[i]);
+}
+['mid', 'bot'].forEach(id => {
+  const n = el(id);
+  n.addEventListener('touchstart', swipeStart, { passive:true });
+  n.addEventListener('touchend', swipeEnd, { passive:true });
+});
+window.addEventListener('resize', () => applyView(state.view));
+if (narrow()){
+  applyView('cli'); el('about').open = false;
+  el('noteBtn').textContent = noteWord() + ': ' + (state.notes ? 'on' : 'off');
+  el('speedBtn').textContent = speedWord(SPEEDS.find(s => s.v === state.speed));
+  document.querySelectorAll('#tabs [data-view]').forEach(b => { b.setAttribute('aria-label', 'show ' + b.textContent); b.textContent = b.dataset.view === 'cli' ? 'Client' : b.dataset.view === 'srv' ? 'Server' : 'Trace'; });
+}
+else { el('followBtn').classList.add('on'); }
 initChips();
 regen();
 el('stat').textContent = 'pick a scenario, then press Run';
