@@ -13,7 +13,12 @@ open it, it runs. Written with an AI assistant, then reviewed and fixed by hand.
 | **[API Learning Sandbox](api-learning.html)** | Press Run and watch one API call travel through client code → the wire → server code → the wire → client code. The executing line is highlighted in both panes while a timestamped request/response trace builds below. Switch the same scenario between **REST, GraphQL, gRPC and WebSocket**, and between **Python, JavaScript, Java and C#** on each side. 6 scenarios: package search, OAuth token exchange, weather lookup (cache hit), image byte stream, 3 MB chunked video, live server push. Shows headers, status codes, `Content-Length`, TLS/keep-alive, TCP frames, `sendfile(2)`, bcrypt cost and cache hits. Step forward/back, slow-mo or instant, explanations toggle. Keyboard: <kbd>space</kbd> run, <kbd>→</kbd>/<kbd>←</kbd> step, <kbd>R</kbd> rebuild. Works on phones: one panel at a time, swipe between Client / Server / Trace. Loop bodies walk per iteration (read → write → read → write) and the highlight only ever walks *down* a pane — callbacks and resolvers are written inline where they run, so nothing jumps backwards. |
 | **[MCP Learning Sandbox](mcp-learning.html)** | The same console pointed at the Model Context Protocol: one tool call walking **the model → the MCP client → JSON-RPC 2.0 on a transport → the MCP server → back**, with the actual message frames in the trace. Its reason for existing is the **protocol revision** selector: run the same scenario on `2025-03-26`, `2025-11-25` and the current `2026-07-28` and watch the `initialize` handshake, `notifications/initialized`, `Mcp-Session-Id` and server-initiated `elicitation/create` disappear, replaced by `server/discover`, per-request `_meta` and `input_required` retries. 4 scenarios (cold start, tool call, tool failure vs protocol failure, server-asks-a-human), **stdio vs Streamable HTTP** (`Mcp-Method` / `Mcp-Name` headers), server in Python (FastMCP) or the TypeScript SDK — the Python signature is
 `async def weather(city: str, units: Literal["metric", "imperial"] = "metric")` so the schema the model reads is
-the one the code declares — client in the TypeScript SDK or the Python `mcp` SDK (`Client(...)`, `elicitation_callback`, plus `mode="legacy"` when the server is old enough to send requests back). Nothing is invented: `dev/check-mcp.js` asserts each revision shows only its own protocol shape. |
+the one the code declares — client in the TypeScript SDK or the Python `mcp` SDK (`Client(...)`, `elicitation_callback`, plus `mode="legacy"` when the server is old enough to send requests back). Nothing is invented: `dev/check-mcp.js` asserts each revision shows only its own protocol shape, and the
+python snippets were checked against a real `fastmcp` 3.4.11 process (where `ToolError` lives, how a tool
+gets `isError:true`, what a plain dict return becomes, the `{"result": ...}` wrap-result trick). Where a
+framework departs from the spec the page says so out loud: fastmcp 3.x answers an unknown tool with
+`isError:true` where the spec wants `-32602`, and it has no multi round-trip support yet, so that pane is
+labelled as the 4.x / spec shape. |
 
 ## Checking the step model
 
@@ -48,7 +53,10 @@ What they assert:
    on a 2026-07-28 session. The tool schema is asserted in both directions: a `tools/list` frame advertising
    `"enum": ["metric","imperial"]` has to come from a constraint the server snippet actually declares
    (`Literal[...]` in Python, `z.enum([...])` in TypeScript), and a declared constraint has to reach the wire.
-   A loose `units: str = "metric"` cannot generate an `enum`, and the page used to claim it did;
+   A loose `units: str = "metric"` cannot generate an `enum`, and the page used to claim it did.
+   `outputSchema` is asserted the same way: the frame has to match how *that* language produces it
+   (`z.object({...})` declared in TypeScript, a bare `{"type":"object","additionalProperties":true}`
+   from a python `-> dict`);
 5. **no sideways pages** — `check-layout.js` emulates a phone *and* a desktop window, runs every
    combination to the end in all three views and asserts `document.scrollWidth` never exceeds the
    viewport. One long unbreakable token in a pre-formatted block (a base64 `requestState`, say) is

@@ -576,8 +576,10 @@ function serverPy(d){
   const nl = () => L.push({ t:'', k:null });
   const cmt = t => L.push({ t, k:null });
 
-  add('from fastmcp import FastMCP, ToolError', 's.listen');
+  add('from fastmcp import FastMCP, Context', 's.listen');
+  add('from fastmcp.exceptions import ToolError', 's.listen');
   add('from typing import Literal', 's.listen');
+  cmt('# ToolError lives in fastmcp.exceptions - "from fastmcp import ToolError" is an ImportError in 3.x');
   add('mcp = FastMCP("notes-tools")', 's.listen');
   if (d.tr === 'stdio')
     cmt('# stdio: the host already started us as a child process; we read line-delimited JSON on stdin');
@@ -590,32 +592,37 @@ function serverPy(d){
   nl();
   if (d.sc === 'mrtr' && d.R.mrtr === 'mrtr'){
     add('@mcp.tool', 's.route');
-    add('async def send_message(to: str, body: str, ctx) -> Result:', 's.route');
+    add('async def send_message(to: str, body: str, ctx: Context) -> dict | InputRequiredResult:', 's.route');
     add('    """Send an SMS to a contact."""', null);
-    add('    if ctx.request_state is None:                      # first attempt', 's.parse');
-    add('        return input_required(                          # s.input_required', 's.inputreq');
-    add('            request_id="confirm",', null);
+    add('    if ctx.input_responses is None:                    # first attempt: ask, then stop', 's.parse');
+    add('        return InputRequiredResult(                    # resultType:"input_required"', 's.inputreq');
     add('            message=f"Send to {to}: {body}?",', null);
-    add('            requested_schema={"confirmed": {"type": "boolean", "title": "Confirm?"}})', null);
-    add('    if not ctx.input_response("confirm")["confirmed"]:  # retry, but the human said no', 's.retry');
-    add('        return Result(content=[text("not sent")])', null);
+    add('            requested_schema={"confirmed": {"type": "boolean", "title": "Confirm?"}},', null);
+    add('            request_state=f"{to}|{body}")              # the opaque token the retry carries back', null);
+    add('    if not ctx.input_responses["confirm"].content["confirmed"]:   # retry: the human said no', 's.retry');
+    add('        return {"sent": False}', null);
     add('    msg_id = await sms.send(to, body)', 's.tool');
-    add('    return Result(content=[text(f"sent, id {msg_id}")],', 's.serialize');
-    add('                structured={"sent": True, "messageId": msg_id})', null);
+    add('    return {"sent": True, "id": msg_id}', 's.serialize');
+    nl();
+    cmt('# fastmcp 3.x has none of this yet: no ctx.input_responses, no InputRequiredResult (checked');
+    cmt('# against 3.4.11). This is the 4.x shape, which is what 2026-07-28 describes - no back-channel,');
+    cmt('# the tool returns a request-shaped result and the client re-issues tools/call with inputResponses.');
     return L;
   }
   if (d.sc === 'mrtr' && d.R.mrtr === 'back-req'){
     add('@mcp.tool', 's.route');
-    add('async def send_message(to: str, body: str, ctx) -> Result:', 's.route');
+    add('async def send_message(to: str, body: str, ctx: Context) -> dict:', 's.route');
     add('    """Send an SMS to a contact."""', null);
-    add('    args = ctx.validate()                              # model-written arguments', 's.parse');
-    add('    answer = await ctx.elicit(                         # server-initiated: elicitation/create', 's.backreq');
-    add('        f"Send to {to}: {body}?",', null);
-    add('        {"confirmed": {"type": "boolean"}})', null);
-    add('    if not answer.confirmed:', null);
-    add('        return Result(content=[text("not sent")])', null);
+    add('    ans = await ctx.elicit(f"Send to {to}: {body}?",   # server-initiated: elicitation/create', 's.backreq');
+    add('                           response_type={"confirmed": {"type": "boolean"}})', null);
+    add('    if ans.action != "accept":                         # decline or cancel', 's.retry');
+    add('        return {"sent": False}', null);
     add('    msg_id = await sms.send(to, body)', 's.tool');
-    add('    return Result(content=[text(f"sent, id {msg_id}")])', 's.serialize');
+    add('    return {"sent": True, "id": msg_id}', 's.serialize');
+    nl();
+    cmt('# a plain dict return becomes BOTH content[] (text for the model) and structuredContent');
+    cmt('# (typed data for your program). elicit takes message + response_type (a dict, a pydantic');
+    cmt('# model or a dataclass) and answers with .action and .data.');
     return L;
   }
   if (d.sc === 'mrtr'){
@@ -623,9 +630,7 @@ function serverPy(d){
     add('async def send_message(to: str, body: str) -> dict:', 's.route');
     add('    """Send an SMS to a contact."""', null);
     add('    if not confirmed_in_arguments(to, body):           # 2025-03-26: no elicitation exists', 's.parse');
-    add('        return {"content": [{"type": "text",', 's.err');
-    add('                  "text": "refused: this revision cannot ask the user first"}],', null);
-    add('                "isError": True}                       # the tool never runs', null);
+    add('        raise ToolError("refused: this revision cannot ask the user first")', 's.err');
     nl();
     cmt('# there is no way in this revision to pause and ask the person using the app,');
     cmt('# so a side-effecting tool has to refuse and let the model try another way');
@@ -639,12 +644,18 @@ function serverPy(d){
     add('    if units not in ("metric", "imperial"):            # the schema says Literal, too', 's.parse');
     add('        raise ToolError("units must be metric or imperial")', null);
     add('    row = await upstream.get(city)                     # unknown city -> upstream 503', 's.db');
-    add('    return {"content": [{"type": "text",', 's.err');
-    add('              "text": "upstream weather API returned 503"}],', null);
-    add('            "isError": True}                           # still a normal JSON-RPC result', null);
+    add('    raise ToolError("upstream weather API returned 503")', 's.err');
     nl();
-    add('# a name that is not a tool never reaches the handler above: the dispatcher', 's.protoerr');
-    add('# answers -32602 Invalid params, and the client SDK raises an exception', null);
+    cmt('# raising is the only way a python tool gets isError:true - the SDK writes the result you');
+    cmt('# see in the trace: content[] plus isError, HTTP still 2xx, JSON-RPC still a result.');
+    cmt('# Returning {"content": [...], "isError": True} from this function instead gives you');
+    cmt('# isError:false and the whole dict JSON-stringified into one text block (checked against');
+    cmt('# fastmcp 3.4.11). That shape belongs to the typescript SDK, not to python.');
+    nl();
+    add('# a name that is not a tool never reaches the handler above: the spec wants the', 's.protoerr');
+    add('# dispatcher to answer -32602 Invalid params, and the client SDK to raise', null);
+    add('# fastmcp 3.x does not: it answers isError:true "Unknown tool ...", so the client', null);
+    add('# sees a tool failure and the model retries a tool that does not exist', null);
     return L;
   }
   /* discover + call */
@@ -664,7 +675,10 @@ function serverPy(d){
   } else {
     cmt('# nothing runs yet: this scenario only asks what the server can do');
     cmt('# this decorator is all tools/list needs: name, description from the docstring,');
-    cmt('# inputSchema from the signature: Literal becomes enum, a default means optional');
+    cmt('# inputSchema from the signature: Literal becomes enum, a default means optional.');
+    cmt('# "-> dict" also yields outputSchema, but a bare one: {"type":"object","additionalProperties":');
+    cmt('# true}. Annotate a pydantic model for a precise schema; and a non-object return is wrapped');
+    cmt('# as {"result": ...} with x-fastmcp-wrap-result in the schema (fastmcp 3.4.11).');
   }
   return L;
 }
@@ -717,7 +731,9 @@ function serverTs(d){
     add('});', null);
     nl();
     add('  // an unknown tool name never reaches the handler above: the SDK replies', 's.protoerr');
-    add('  // -32602 Invalid params, and the client-side SDK throws', null);
+    add('  // -32602 Invalid params, and the client-side SDK throws.', null);
+    add('  // the typescript sdk used to answer isError:true here, exactly like fastmcp 3.x does', null);
+    add('  // today, and was changed back to a protocol error because the spec says so', null);
     add('server.fallback?.();', null);
     return L;
   }
@@ -733,10 +749,13 @@ function serverTs(d){
   }
   add('server.registerTool("weather", {', 's.route');
   add('  description: "Current conditions for a city",', null);
+  add('  inputSchema: { city: z.string(), units: z.enum(["metric","imperial"]).default("metric") }',
+      d.sc === 'call' ? 's.parse' : null);
   if (d.sc === 'call')
-    add('  inputSchema: { city: z.string(), units: z.enum(["metric","imperial"]).default("metric") }', 's.parse');
+    add('  outputSchema: z.object({ station: z.string(), temperatureC: z.number(),', 's.parse');
   else
-    add('  inputSchema: { city: z.string(), units: z.enum(["metric","imperial"]).default("metric") }', null);
+    add('  outputSchema: z.object({ station: z.string(), temperatureC: z.number(),', null);
+  add('                     windKph: z.number(), conditions: z.string() })', null);
   if (d.sc === 'call'){
     add('}, async ({ city, units }) => {', null);
     add('  const row = await upstream.get(city);   // the slow part', 's.db');
@@ -867,7 +886,12 @@ function wireEvents(d, P){
       frame(P['s.listR'] + 0.5, '<', res(d, 2, {
         tools:[{ name:'weather', description:'Current conditions for a city.',
                  inputSchema:{ type:'object', properties:{ city:{ type:'string' },
-                   units:{ enum:['metric','imperial'], default:'metric' } }, required:['city'] } }],
+                   units:{ enum:['metric','imperial'], default:'metric' } }, required:['city'] },
+                 outputSchema: d.sv === 'js'
+                   ? { type:'object', required:['station','temperatureC','windKph','conditions'],
+                       properties:{ station:{ type:'string' }, temperatureC:{ type:'number' },
+                         windKph:{ type:'number' }, conditions:{ type:'string' } } }
+                   : { type:'object', additionalProperties:true } }],
         ttlMs:300000, cacheScope:'private' }, { 'io.modelcontextprotocol/serverInfo':{ name:'notes-tools', version:'2.1.0' } }));
     } else {
       post(P['c.connect'] + 0.15, 'initialize');
@@ -884,7 +908,12 @@ function wireEvents(d, P){
       frame(P['s.listR'] + 0.5, '<', { jsonrpc:'2.0', id:2, result:{
         tools:[{ name:'weather', description:'Current conditions for a city.',
                  inputSchema:{ type:'object', properties:{ city:{ type:'string' },
-                   units:{ enum:['metric','imperial'], default:'metric' } }, required:['city'] } }] } });
+                   units:{ enum:['metric','imperial'], default:'metric' } }, required:['city'] },
+                 outputSchema: d.sv === 'js'
+                   ? { type:'object', required:['station','temperatureC','windKph','conditions'],
+                       properties:{ station:{ type:'string' }, temperatureC:{ type:'number' },
+                         windKph:{ type:'number' }, conditions:{ type:'string' } } }
+                   : { type:'object', additionalProperties:true } }] } });
     }
   }
 
@@ -987,7 +1016,7 @@ function traceMsg(key, d, i, n){
                                   : 'One return value, two consumers: text for the model, typed JSON for the code.' + (d.R.stateless ? ' resultType:"complete" marks it as an ordinary answer.' : '') };
     case 's.err': return { m:'server: the tool failed, and that is a normal result',
       note:'isError:true plus a text block. HTTP stays 2xx, JSON-RPC stays a result. The model reads the text and chooses what to do next.' };
-    case 's.protoerr': return { m:'server: reject the request with a JSON-RPC error', note:'Bad request, not a failed tool: -32602 Invalid params. The client throws; the model is never told.' };
+    case 's.protoerr': return { m:'server: reject the request with a JSON-RPC error', note:'Bad request, not a failed tool: -32602 Invalid params. Frameworks get this wrong in the wild: fastmcp 3.x answers isError:true, which invites the model to retry a tool that does not exist. The client throws; the model is never told.' };
     case 's.close': return { m:'server: connection closed / process exits', note:'In 2026-07-28 there is no per-connection state to clean up: that is what stateless bought, and what it cost.' };
   }
   return { m:key, note:'' };
@@ -1166,6 +1195,10 @@ function renderTop(){
     warn.push('no structuredContent in this revision: your program has to parse the text back out');
   if (d.sc === 'discover' && d.R.stateless)
     warn.push('server/discover is new in 2026-07-28: older clients send initialize');
+  if (d.sc === 'error' && d.sv === 'python')
+    warn.push('spec: an unknown tool is a protocol error (-32602). fastmcp 3.x answers isError:true instead');
+  if (d.sc === 'mrtr' && d.R.mrtr === 'mrtr' && d.sv === 'python')
+    warn.push('fastmcp 3.x has no multi round-trip support yet: that pane shows the 4.x / spec shape');
   el('chips').innerHTML =
     '<span class=chip>client <b>' + CLANGS[state.cl] + '</b></span>' +
     '<span class=chip>server <b>' + SVLANGS[state.sv] + '</b></span>' +

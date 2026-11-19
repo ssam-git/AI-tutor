@@ -132,6 +132,19 @@ withPage(process.argv[2] || '../mcp-learning.html', async (ev, jsErrors) => {
               shape.push(tag + '  tools/list advertises an enum the ' + sv + ' snippet does not declare');
             if (sc === 'discover' && declared && !wireEnum)
               shape.push(tag + '  the ' + sv + ' snippet constrains units but no enum reaches the wire');
+            /* outputSchema is part of what tools/list advertises, and it is derived from
+               the declaration in the pane - so the frame has to match the language */
+            if (sc === 'discover'){
+              if (!wtxt('"outputSchema"'))
+                shape.push(tag + '  tools/list advertises no outputSchema, but both SDKs send one');
+              const bare = wtxt('"additionalProperties": true');
+              if (sv === 'python' && !bare)
+                shape.push(tag + '  a python "-> dict" should advertise a bare object outputSchema');
+              if (sv === 'js' && bare)
+                shape.push(tag + '  the typescript pane declares z.object, so the schema cannot be bare');
+              if (sv === 'js' && svTxt.indexOf('outputSchema: z.object(') < 0)
+                shape.push(tag + '  the frame shows a typed outputSchema the typescript declaration does not have');
+            }
             if (sc === 'call'){
               if (rev === '2025-03-26' && wtxt('structuredContent')) shape.push(tag + '  2025-03-26 shows structuredContent');
               if (rev !== '2025-03-26' && !wtxt('structuredContent')) shape.push(tag + '  missing structuredContent');
