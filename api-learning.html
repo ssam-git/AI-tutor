@@ -40,6 +40,10 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
 #top{background:var(--pane);border:1px solid var(--line);border-radius:9px;padding:8px 11px;
   display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:start}
 .pick{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:6px}
+/* a label and its select wrap as one unit - never the label alone on the line above.
+   min-width:0 lets the group shrink, so the select inside takes the hit instead
+   of the row escaping the viewport. */
+.pick .fld{display:flex;gap:7px;align-items:center;min-width:0}
 .pick label{font-size:11px;color:var(--dim)}
 .pick select{min-width:21ch;text-align:left}
 /* a protocol date needs about 11ch, not the 21ch a scenario title needs. The padding is
@@ -48,7 +52,7 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
 .back{font-size:11.5px;color:var(--dim);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:4px 8px;white-space:nowrap}
 .back:hover{color:var(--tx);border-color:#3c4b5e}
 #topRow .links{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-#topRow{display:flex;gap:14px;align-items:baseline;justify-content:space-between}
+#topRow{display:flex;gap:14px;align-items:baseline;justify-content:space-between;grid-column:1/-1}
 #about{margin-top:7px;grid-column:1/-1}
 #about>summary{display:none}
 #desc{margin:.35em 0 0}
@@ -62,7 +66,7 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
 #runBtn{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700;padding:7px 14px;font-size:14px}
 #runBtn.playing{background:#1f6f3a;border-color:#2f9c53}
 #stat{font-size:11.5px;color:var(--dim)}
-#chips{display:flex;gap:6px;flex-wrap:wrap}
+#chips{display:flex;gap:6px;flex-wrap:wrap;grid-column:1/-1;margin-top:2px}
 .chip{font-size:11px;padding:3px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
 .chip b{color:var(--tx)}
 .chip.warn{border-color:#8a6a1f;color:#e6c07a;background:rgba(255,180,69,.08)}
@@ -154,6 +158,7 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
   #runRow button{flex:1 1 auto;min-height:42px;padding:6px 8px;font-size:12px}
   #runBtn{flex:1 1 100%;min-height:46px;font-size:15px}
   /* the chips repeat what the panel headers already say; keep only warnings */
+  #chips{order:4}
   #chips .chip{display:none}
   #chips .chip.warn{display:inline-flex}
   #tabs{display:flex}
@@ -222,15 +227,15 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
 <body>
 
 <div id="top">
-  <div>
-    <div id="topRow">
-      <h1>API Learning Sandbox <small>watch one API call travel: client code → wire → server code → wire → client code</small></h1>
-      <span class="links">
-        <a class="back" href="mcp-learning.html" title="the other sandbox: same console, different protocol">MCP sandbox &rarr;</a>
+  <div id="topRow">
+    <h1>API Learning Sandbox <small>watch one API call travel: client code → wire → server code → wire → client code</small></h1>
+    <span class="links">
+      <a class="back" href="mcp-learning.html" title="the other sandbox: same console, different protocol">MCP sandbox &rarr;</a>
       <a class="back" href="index.html" title="more AI-built tutorials">&larr; all projects</a>
       </span>
-    </div>
-    <div class="pick"><label for="exSel">Scenario</label><select id="exSel" title="pick a scenario"></select></div>
+  </div>
+  <div class="pick">
+    <span class="fld"><label for="exSel">Scenario</label><select id="exSel" title="pick a scenario"></select></span>
   </div>
   <div id="runCol">
     <div id="runRow">
@@ -242,8 +247,8 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
       <button id="noteBtn" title="explanations">Explanations: on</button>
     </div>
     <div id="stat"></div>
-    <div id="chips"></div>
   </div>
+  <div id="chips"></div>
 
   <details id="about" open>
     <summary>About this scenario</summary>
@@ -1558,6 +1563,7 @@ function regen(){
   state.svLines = serverFix(SERVER[state.sv](d).filter(x => x && typeof x.t === 'string'), state.sv, d);
   const built = buildSteps(state.clLines, state.svLines, d);
   state.steps = built.steps; state.cur = -1;
+  el('stat').textContent = '';      // a fresh scenario has no run state to report
   refreshChips(); renderCode(); renderTop(); renderTrace(); setActive(); paintRun();
 }
 function renderCode(){
@@ -1678,7 +1684,7 @@ function paintRun(){
 el('runBtn').onclick = () => { state.playing ? stop() : play(); };
 el('nextBtn').onclick = () => { stop(); advance(); };
 el('prevBtn').onclick = () => { stop(); state.cur = Math.max(-1, state.cur - 1); renderTrace(); setActive(); };
-el('resetBtn').onclick = () => { stop(); state.cur = -1; renderTrace(); setActive(); el('stat').textContent = 'reset — pick another language, API type or scenario and press Run'; };
+el('resetBtn').onclick = () => { stop(); state.cur = -1; renderTrace(); setActive(); el('stat').textContent = 'reset'; };
 const SPEEDS = [{ v:1, l:'normal' }, { v:0.35, l:'slow' }, { v:2.5, l:'fast' }, { v:0, l:'instant' }];
 const SHORTSPD = { 1:'1×', 0.35:'½×', 2.5:'3×', 0:'all' };
 const speedWord = s => narrow() ? 'Speed ' + SHORTSPD[s.v] : 'Speed: ' + s.l;
@@ -1734,7 +1740,6 @@ if (narrow()){
 else { el('followBtn').classList.add('on'); }
 initChips();
 regen();
-el('stat').textContent = 'pick a scenario, then press Run';
 </script>
 </body>
 </html>

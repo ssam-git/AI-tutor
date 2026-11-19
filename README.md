@@ -24,7 +24,7 @@ violation.
 node dev/check-steps.js      # api-learning.html: 384 combos (6 scenarios x 4 API types x 4 x 4 languages)
 node dev/check-mcp.js        # mcp-learning.html:  48 combos (4 scenarios x 2 transports x 3 revisions x 2 langs)
 node dev/check-shared.js     # the ENGINE block copied into each page must stay byte-identical
-node dev/check-layout.js     # every scenario at 390x844: no page may be wider than the viewport
+node dev/check-layout.js     # every scenario at 390x844 AND 1100x760: no overflow, no drifting controls
 CHROME=/path/to/chromium node dev/check-steps.js   # only if it cannot find a chromium to launch
 W=320 H=640 node dev/check-layout.js               # small-phone pass
 ```
@@ -41,11 +41,20 @@ What they assert:
 4. **protocol shape** (MCP only) — `2026-07-28` must show no `initialize` and no session id, older revisions must
    show no `server/discover`, `structuredContent` / `ttlMs` must be absent from `2025-03-26`, and stdio must
    carry no HTTP at all;
-5. **no sideways pages** — `check-layout.js` emulates a 390 px phone, runs every combination to the end in all
-   three views and asserts `document.scrollWidth` never exceeds the viewport. One long unbreakable token in a
-   pre-formatted block (a base64 `requestState`, say) is enough to make the document 634 px wide, and the
-   browser then scales the whole page down: it does not look scrolled, it looks broken. `overflow-wrap:anywhere`
-   on the trace blocks is what keeps that from coming back.
+5. **no sideways pages** — `check-layout.js` emulates a phone *and* a desktop window, runs every
+   combination to the end in all three views and asserts `document.scrollWidth` never exceeds the
+   viewport. One long unbreakable token in a pre-formatted block (a base64 `requestState`, say) is
+   enough to make the document 634 px wide, and the browser then scales the whole page down: it does
+   not look scrolled, it looks broken. `overflow-wrap:anywhere` on the trace blocks is what keeps
+   that from coming back;
+6. **controls that stay put** — the same check records the x of the back links, the scenario select
+   and the Run button for every scenario and fails if any of them drifts by more than a pixel. They
+   used to: a wrapping flex row's max-content width is the *sum* of its items, so the chips row under
+   the run buttons resized the grid column beside it and picking "live server push" slid the links
+   300 px left. The title row, the chips row and the scenario blurb now each span the whole top pane.
+
+To eyeball a change instead of reasoning about it, `dev/shot.js /tmp/jobs.json` drives the page with
+an `eval` (pick a scenario, step to the end) and writes PNGs — same zero-dependency CDP setup.
 
 If you change a code generator, a phase number or `buildSteps()`, run them before committing.
 
