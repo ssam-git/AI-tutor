@@ -577,6 +577,7 @@ function serverPy(d){
   const cmt = t => L.push({ t, k:null });
 
   add('from fastmcp import FastMCP, ToolError', 's.listen');
+  add('from typing import Literal', 's.listen');
   add('mcp = FastMCP("notes-tools")', 's.listen');
   if (d.tr === 'stdio')
     cmt('# stdio: the host already started us as a child process; we read line-delimited JSON on stdin');
@@ -632,9 +633,10 @@ function serverPy(d){
   }
   if (d.sc === 'error'){
     add('@mcp.tool', 's.route');
-    add('async def weather(city: str, units: str = "metric") -> dict:', 's.route');
+    add('async def weather(city: str,', 's.route');
+    add('                  units: Literal["metric", "imperial"] = "metric") -> dict:', 's.route');
     add('    """Current conditions for a city."""', null);
-    add('    if units not in ("metric", "imperial"):            # arguments come from a model', 's.parse');
+    add('    if units not in ("metric", "imperial"):            # the schema says Literal, too', 's.parse');
     add('        raise ToolError("units must be metric or imperial")', null);
     add('    row = await upstream.get(city)                     # unknown city -> upstream 503', 's.db');
     add('    return {"content": [{"type": "text",', 's.err');
@@ -647,10 +649,11 @@ function serverPy(d){
   }
   /* discover + call */
   add('@mcp.tool', 's.route');
-  add('async def weather(city: str, units: str = "metric") -> dict:', 's.route');
+  add('async def weather(city: str,', 's.route');
+  add('                  units: Literal["metric", "imperial"] = "metric") -> dict:', 's.route');
   add('    """Current conditions for a city."""', null);
   if (d.sc === 'call'){
-    add('    if units not in ("metric", "imperial"):              # arguments come from a model', 's.parse');
+    add('    if units not in ("metric", "imperial"):              # the schema says Literal, too', 's.parse');
     add('        raise ToolError("units must be metric or imperial")', null);
     add('    row = cache.get(city) or await upstream.get(city)  # the slow part', 's.db');
     add('    return {"station": "BERLIN", "temperatureC": 6.4,', 's.serialize');
@@ -661,7 +664,7 @@ function serverPy(d){
   } else {
     cmt('# nothing runs yet: this scenario only asks what the server can do');
     cmt('# this decorator is all tools/list needs: name, description from the docstring,');
-    cmt('# inputSchema generated from the signature');
+    cmt('# inputSchema from the signature: Literal becomes enum, a default means optional');
   }
   return L;
 }

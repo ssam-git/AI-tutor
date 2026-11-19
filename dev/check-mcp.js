@@ -33,6 +33,7 @@ withPage(process.argv[2] || '../mcp-learning.html', async (ev, jsErrors) => {
             const st = state.steps;
             const tag = sc + '/' + tr + '/' + rev + '/' + cl + '/' + sv;
             const cliTxt = state.clLines.map(l => l.t).join('\\n');
+            const svTxt = state.svLines.map(l => l.t).join('\\n');
 
             for (let i = 1; i < st.length; i++){
               const a = st[i-1], b = st[i];
@@ -120,6 +121,17 @@ withPage(process.argv[2] || '../mcp-learning.html', async (ev, jsErrors) => {
               shape.push(tag + '  typescript client should read structuredContent');
             if (cl === 'py' && sc === 'error' && !/is_error/.test(cliTxt))
               shape.push(tag + '  python client should read is_error');
+            /* the schema the wire advertises and the declaration in the pane must agree.
+               an enum in the tools/list frame has to come from a constraint in the code,
+               and a constraint in the code has to reach the wire */
+            const wireEnum = wtxt('"enum":');
+            const declared = sv === 'python'
+              ? svTxt.indexOf('Literal["metric", "imperial"]') >= 0
+              : svTxt.indexOf('z.enum(["metric","imperial"])') >= 0;
+            if (sc !== 'mrtr' && wireEnum && !declared)
+              shape.push(tag + '  tools/list advertises an enum the ' + sv + ' snippet does not declare');
+            if (sc === 'discover' && declared && !wireEnum)
+              shape.push(tag + '  the ' + sv + ' snippet constrains units but no enum reaches the wire');
             if (sc === 'call'){
               if (rev === '2025-03-26' && wtxt('structuredContent')) shape.push(tag + '  2025-03-26 shows structuredContent');
               if (rev !== '2025-03-26' && !wtxt('structuredContent')) shape.push(tag + '  missing structuredContent');
