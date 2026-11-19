@@ -34,7 +34,8 @@ const LOOPS = {
       for (const tr of ['http','stdio'])
         for (const rev of Object.keys(REVS))
           for (const sv of ['python','js'])
-            sweep(si, { tr, rev, sv }, SCEN[si].id + '/' + tr + '/' + rev + '/' + sv);`,
+            for (const cl of ['ts','py'])
+              sweep(si, { tr, rev, sv, cl }, SCEN[si].id + '/' + tr + '/' + rev + '/' + sv + '/' + cl);`,
 };
 
 (async () => {

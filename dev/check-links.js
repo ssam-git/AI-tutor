@@ -20,8 +20,10 @@ const SKIP = /^(https?:|mailto:|data:|#|javascript:)/;
 let bad = 0, checked = 0;
 for (const page of pages){
   const src = fs.readFileSync(path.join(root, page), 'utf8');
-  const hrefs = [...src.matchAll(/(?:href|src|action)\s*=\s*("([^"]*)"|'([^']*)')/g)]
-    .map(m => m[2] !== undefined ? m[2] : m[3]);
+  /* only inside tags: the tutorial pages carry generated code snippets as strings, and a
+     snippet like action="accept" is an MCP field, not a link */
+  const hrefs = [...src.matchAll(/<[a-zA-Z][^>]*>/g)].flatMap(tag =>
+    [...tag[0].matchAll(/(?:href|src)\s*=\s*("([^"]*)"|'([^']*)')/g)].map(m => m[2] !== undefined ? m[2] : m[3]));
   for (const h of hrefs){
     if (!h || SKIP.test(h)) continue;
     checked++;

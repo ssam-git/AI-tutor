@@ -270,7 +270,7 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
   <div class="pane client" id="paneCli">
     <header>
       <span class="who">MCP CLIENT (the host app and its model)</span>
-      <span class="meta">client: <b id="clName">&ndash;</b></span>
+      <span class="sel">Language: <span id="clBtns"></span></span>
       <span id="pos"></span>
     </header>
     <div id="codeCli"></div>
@@ -334,13 +334,13 @@ const REVS = {
 };
 
 const SVLANGS = { python:'Python \u00b7 FastMCP', js:'TypeScript SDK' };
-const CLNAME  = 'TypeScript SDK';
+const CLANGS  = { ts:'TypeScript SDK', py:'Python \u00b7 mcp SDK' };
 
 /* ============================================================
    resolve(scenario) -> descriptor the generators and the trace read
    ============================================================ */
 function resolve(sc){
-  const d = { sc:sc.id, scenario:sc, tr:state.tr, rev:state.rev, R:REVS[state.rev], host:HOST, sv:state.sv };
+  const d = { sc:sc.id, scenario:sc, tr:state.tr, rev:state.rev, cl:state.cl, R:REVS[state.rev], host:HOST, sv:state.sv };
   d.bytes = 0; d.msgCount = 0;        // filled by wireEvents: what actually travelled
   return d;
 }
@@ -348,7 +348,9 @@ function resolve(sc){
 /* ============================================================
    CLIENT code (one language: the TypeScript SDK)
    ============================================================ */
-function client(d){
+function client(d){ return state.cl === 'py' ? clientPy(d) : clientTs(d); }
+
+function clientTs(d){
   const L = [];
   const add = (t, k) => L.push({ t, k });
   const nl  = () => L.push({ t:'', k:null });
@@ -439,6 +441,100 @@ function client(d){
   }                                          // end of the "not cold start" block
   nl();
   add('await client.close();', 'c.close');
+  return L;
+}
+
+
+/* the Python client: the official mcp SDK. Its Client takes one positional argument
+   and works the transport out from its type - a URL is Streamable HTTP, a
+   StdioServerParameters is a child process. Verified against the SDK's own client docs. */
+function clientPy(d){
+  const L = [];
+  const add = (t, k) => L.push({ t, k });
+  const nl = () => L.push({ t:'', k:null });
+  const cmt = t => L.push({ t, k:null });
+  const B = '    ';                                   // the body lives inside `async with client:`
+
+  cmt('# three parties, one file: the HOST app owns the model, the MCP CLIENT');
+  cmt('# owns one connection per server, the SERVER owns the tool.');
+  if (d.sc === 'mrtr'){
+    add('from mcp import Client, types', null);
+    if (d.R.mrtr === 'back-req')
+      cmt('# 2025-11-25: this revision lets the server send a request back the other way.');
+    else
+      cmt('# 2026-07-28: the server hands the question back inside the tool result instead.');
+    cmt('# registering a callback IS how the client declares that capability.');
+    add('async def ask(ctx, params) -> types.ElicitResult:', 'c.elicit');
+    add('    return types.ElicitResult(action="accept",', null);
+    add('        content={"confirmed": await ui.confirm(params.message)})', null);
+    nl();
+  }
+  if (d.tr === 'stdio'){
+    add('from mcp import Client, StdioServerParameters', 'c.setup');
+    add('server = StdioServerParameters(command="uv", args=["run", "server.py"])', 'c.setup');
+    cmt('# the child gets an allow-listed environment, not yours: pass env= for API keys');
+    if (d.sc === 'mrtr' && d.R.mrtr === 'back-req')
+      add('client = Client(server, elicitation_callback=ask, mode="legacy")', 'c.setup');
+    else if (d.sc === 'mrtr')
+      add('client = Client(server, elicitation_callback=ask)', 'c.setup');
+    else
+      add('client = Client(server)', 'c.setup');
+  } else {
+    if (d.sc === 'mrtr') add('from mcp import Client              # a URL means Streamable HTTP', 'c.setup');
+    else add('from mcp import Client', 'c.setup');
+    if (d.sc === 'mrtr' && d.R.mrtr === 'back-req'){
+      add('client = Client("https://mcp.acme.dev/mcp", elicitation_callback=ask,', 'c.setup');
+      add('                  mode="legacy")                        # no back-channel in the modern protocol', null);
+    } else if (d.sc === 'mrtr'){
+      add('client = Client("https://mcp.acme.dev/mcp", elicitation_callback=ask)', 'c.setup');
+    } else {
+      add('client = Client("https://mcp.acme.dev/mcp")', 'c.setup');
+    }
+  }
+  add('async with client:', 'c.connect');
+  cmt(B + (d.R.stateless ? '# entering the block opens the transport: this revision has no handshake'
+                         : '# entering the block also runs the initialize handshake of this revision'));
+  add(B + 'tools = await client.list_tools()', 'c.list');
+  cmt(B + '# the model only ever sees name + description + inputSchema of each tool');
+  add(B + 'msgs = [{"role": "user", "content": ' + JSON.stringify(ASK[d.sc]) + '}]', null);
+  if (d.sc !== 'discover'){
+    add(B + 'turn = await llm.chat(msgs, tools.tools)          # your model, not MCP', 'c.decide');
+    nl();
+    if (d.sc === 'error'){
+      add(B + 'bad = await client.call_tool("weather", {"city": "Nowhereville"})', 'c.call');
+      nl();
+      cmt(B + '# the tool failed but the call succeeded: is_error is data the model reads');
+      add(B + 'if bad.is_error: msgs.append({"role": "tool", "content": bad.content[0].text})', 'c.result');
+      add(B + 'turn = await llm.chat(msgs, tools.tools)        # the model decides what to do next', 'c.answer');
+      nl();
+      cmt(B + '# now a request the server rejects outright: a protocol error, not a tool result');
+      add(B + 'try:', null);
+      add(B + '    await client.call_tool("weather2", {})', 'c.call2');
+      add(B + 'except Exception as e:                          # the SDK raises MCPError; the model never sees it', 'c.err');
+      add(B + '    print("protocol error:", e)', null);
+    } else if (d.sc === 'mrtr'){
+      add(B + 'r = await client.call_tool("send_message", {"to": "+49 30 8874521",', 'c.call');
+      add(B + '                                       "body": "running 15 min late"})', null);
+      if (d.R.mrtr === 'mrtr'){
+        cmt(B + '# the answer arrives as input_required; Client passes the question to the same');
+        cmt(B + '# elicitation_callback and re-issues the call itself - one line of your code');
+      } else if (d.R.mrtr === 'none'){
+        cmt(B + '# this revision has no way for the server to ask, so it can only refuse');
+      }
+      add(B + 'msgs.append({"role": "tool", "content": r.content[0].text})', 'c.result');
+      add(B + 'answer = await llm.chat(msgs, tools.tools)      # the model reports what happened', 'c.answer');
+    } else {
+      add(B + 'r = await client.call_tool("weather", {"city": "Berlin", "units": "metric"})', 'c.call');
+      add(B + 'msgs.append({"role": "tool", "content": r.structured_content})', 'c.result');
+      cmt(B + '# on the wire the field is structuredContent; the SDK also exposes it snake_case');
+      add(B + 'answer = await llm.chat(msgs, tools.tools)', 'c.answer');
+      add(B + 'print(answer["content"])', null);
+    }
+  } else {
+    cmt(B + '# cold start ends here: nothing has been asked of the model yet');
+  }
+  nl();
+  add('# leaving the async with closes the transport' + (d.tr === 'stdio' ? ' and the child process exits with it' : ''), 'c.close');
   return L;
 }
 
@@ -658,6 +754,7 @@ function phases(d){
     P['s.protoerr'] = 92;
   }
   if (d.sc === 'mrtr' && d.R.mrtr === 'back-req') P['c.elicit'] = 34;   // handler registered before the call
+  if (d.cl === 'py' && d.sc === 'mrtr') P['c.elicit'] = 6;              // the callback is defined above the client
   if (d.R.stateless){ delete P['s.initR']; } else { delete P['s.discoverR']; }
   return P;
 }
@@ -953,7 +1050,7 @@ function hl(text, lang){
    UI state + playback
    ============================================================ */
 const el = id => document.getElementById(id);
-const state = { si:0, tr:'http', rev:'2026-07-28', sv:'python', speed:1, notes:true, cur:-1, playing:false, timer:null, steps:[], clLines:[], svLines:[], view:'cli', follow:true };
+const state = { si:0, tr:'http', rev:'2026-07-28', cl:'ts', sv:'python', speed:1, notes:true, cur:-1, playing:false, timer:null, steps:[], clLines:[], svLines:[], view:'cli', follow:true };
 const narrow = () => window.matchMedia('(max-width:860px)').matches;
 const noteWord = () => narrow() ? 'Notes' : 'Explanations';
 
@@ -982,7 +1079,7 @@ function chipGroup(host, items, cls){
 function refreshChips(){
   el('exSel').value = SCEN[state.si].id;
   el('revSel').value = state.rev;
-  [['trBtns','tr'],['svBtns','sv']].forEach(([id, key]) => {
+  [['clBtns','cl'],['trBtns','tr'],['svBtns','sv']].forEach(([id, key]) => {
     const host = el(id);
     host.querySelectorAll('[data-v]').forEach(b => {
       if (b.dataset.v === state[key]) b.classList.add('on'); else b.classList.remove('on');
@@ -1007,6 +1104,7 @@ function initChips(){
   rv.value = state.rev;
   rv.title = Object.entries(REVS).map(([k, r]) => k + ': ' + r.note).join('\n');
   rv.onchange = () => { state.rev = rv.value; regen(); };
+  chipGroup(el('clBtns'), Object.entries(CLANGS).map(([v, l]) => ({ v, label:l })), 'cl');
   chipGroup(el('trBtns'), Object.entries(TRANS).map(([v, t]) => ({ v, label:t.name })), 'tr');
   chipGroup(el('svBtns'), Object.entries(SVLANGS).map(([v, l]) => ({ v, label:l })), 'sv');
 }
@@ -1025,14 +1123,13 @@ function regen(){
 function renderCode(){
   const mk = (lines, lang) => lines.map((ln, i) =>
     '<div class=ln data-line=' + i + '><span class=num>' + (i+1) + '</span><span class=src>' + hl(ln.t, lang) + '</span></div>').join('');
-  el('codeCli').innerHTML = mk(state.clLines, 'js');
+  el('codeCli').innerHTML = mk(state.clLines, state.cl === 'py' ? 'python' : 'js');
   el('codeSrv').innerHTML = mk(state.svLines, state.sv);
 }
 function renderTop(){
   const sc = SCEN[state.si], d = state.d;
   el('desc').innerHTML = '<b>' + esc(sc.title) + '</b> \u2014 ' + esc(sc.blurb) +
     '   <span class=api>' + esc(d.R.note) + '</span>';
-  el('clName').textContent = CLNAME;
   el('revName').textContent = d.rev;
   const warn = [];
   if (d.sc === 'mrtr' && d.R.mrtr === 'none')
@@ -1044,7 +1141,7 @@ function renderTop(){
   if (d.sc === 'discover' && d.R.stateless)
     warn.push('server/discover is new in 2026-07-28: older clients send initialize');
   el('chips').innerHTML =
-    '<span class=chip>client <b>' + CLNAME + '</b></span>' +
+    '<span class=chip>client <b>' + CLANGS[state.cl] + '</b></span>' +
     '<span class=chip>server <b>' + SVLANGS[state.sv] + '</b></span>' +
     '<span class=chip>transport <b>' + TRANS[state.tr].name + '</b> ' + TRANS[state.tr].note + '</span>' +
     '<span class=chip>revision <b>' + d.rev + '</b></span>' +
@@ -1055,7 +1152,7 @@ function renderTrace(){
   const N = state.steps.length;
   if (state.cur < 0){
     t.innerHTML = '<div class="row wire"><span class=t>&ndash;</span><span class=b>READY</span><span class=m>' +
-      N + ' steps \u00b7 client ' + CLNAME + ' \u00b7 server ' + SVLANGS[state.sv] + ' \u00b7 ' + TRANS[state.tr].name +
+      N + ' steps \u00b7 client ' + CLANGS[state.cl] + ' \u00b7 server ' + SVLANGS[state.sv] + ' \u00b7 ' + TRANS[state.tr].name +
       ' \u00b7 protocol ' + state.rev +
       '\npress Run (or space). The highlighted line is the one running; the yellow blocks are the JSON-RPC messages that travel.</span></div>';
     el('trStat').textContent = 'step 0/' + N;

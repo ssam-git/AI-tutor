@@ -3,7 +3,7 @@
  *
  *   node dev/check-mcp.js [path-to-html]          (defaults to ../mcp-learning.html)
  *
- * Four scenarios x 2 transports x 3 protocol revisions x 2 server languages = 48 combos:
+ * 4 scenarios x 2 transports x 3 revisions x 2 client languages x 2 server languages = 96 combos:
  *
  *   1. LINE order   - the highlight must never move up inside a pane (engine guarantee).
  *   2. PHASE order  - snippet source order must agree with the phase map.
@@ -25,17 +25,19 @@ withPage(process.argv[2] || '../mcp-learning.html', async (ev, jsErrors) => {
     for (let si = 0; si < SCEN.length; si++)
       for (const tr of ['http','stdio'])
         for (const rev of Object.keys(REVS))
-          for (const sv of ['python','js']){
+          for (const sv of ['python','js'])
+          for (const cl of ['ts','py']){
             combos++;
             const sc = SCEN[si].id;
-            state.si = si; state.tr = tr; state.rev = rev; state.sv = sv; regen();
+            state.si = si; state.tr = tr; state.rev = rev; state.sv = sv; state.cl = cl; regen();
             const st = state.steps;
-            const tag = sc + '/' + tr + '/' + rev + '/' + sv;
+            const tag = sc + '/' + tr + '/' + rev + '/' + cl + '/' + sv;
+            const cliTxt = state.clLines.map(l => l.t).join('\\n');
 
             for (let i = 1; i < st.length; i++){
               const a = st[i-1], b = st[i];
               if (a.side !== b.side || a.side === 'wire' || a.line == null || b.line == null || a.k === b.k) continue;
-              const side = a.side === 'client' ? 'client(js)' : 'server(' + sv + ')';
+              const side = a.side === 'client' ? 'client(' + cl + ')' : 'server(' + sv + ')';
               if (b.line < a.line) lineInv.push(tag + ' ' + side + ': L' + (a.line+1) + ' ' + a.k + ' -> L' + (b.line+1) + ' ' + b.k);
               if (b.p < a.p) phaseInv.push(tag + ' ' + side + ': ' + a.k + '(' + a.p + ') -> ' + b.k + '(' + b.p + ')');
             }
@@ -83,8 +85,12 @@ withPage(process.argv[2] || '../mcp-learning.html', async (ev, jsErrors) => {
             }
             if (sc === 'mrtr'){
               if (rev === '2026-07-28'){
-                rule('ask-before-human', w('← id 5 answer'), idx('c.elicit'));
-                rule('human-before-retry', idx('c.elicit'), idx('c.retry'));
+                if (cl === 'ts'){
+                  rule('ask-before-human', w('← id 5 answer'), idx('c.elicit'));
+                  rule('human-before-retry', idx('c.elicit'), idx('c.retry'));
+                } else {
+                  rule('callback-defined-before-call', idx('c.elicit'), w('→ tools/call'));
+                }
                 const calls2 = wall('→ tools/call')[1];
                 rule('retry-frame-after-retry-code', idx('c.retry'), calls2);
                 rule('retry-frame-before-resume', calls2, idx('s.retry'));
@@ -104,6 +110,16 @@ withPage(process.argv[2] || '../mcp-learning.html', async (ev, jsErrors) => {
                 if (!wtxt('refused')) shape.push(tag + '  2025-03-26 mrtr answer is not a refusal');
               }
             }
+            if (cl === 'py' && sc === 'mrtr' && rev === '2025-11-25' && !/mode="legacy"/.test(cliTxt))
+              shape.push(tag + '  a python client answering a back-channel request needs mode="legacy"');
+            if (cl === 'py' && rev === '2026-07-28' && /mode="legacy"/.test(cliTxt))
+              shape.push(tag + '  mode="legacy" on a 2026-07-28 client');
+            if (cl === 'py' && sc === 'call' && !/structured_content/.test(cliTxt))
+              shape.push(tag + '  python client should read structured_content');
+            if (cl === 'ts' && sc === 'call' && !/structuredContent/.test(cliTxt))
+              shape.push(tag + '  typescript client should read structuredContent');
+            if (cl === 'py' && sc === 'error' && !/is_error/.test(cliTxt))
+              shape.push(tag + '  python client should read is_error');
             if (sc === 'call'){
               if (rev === '2025-03-26' && wtxt('structuredContent')) shape.push(tag + '  2025-03-26 shows structuredContent');
               if (rev !== '2025-03-26' && !wtxt('structuredContent')) shape.push(tag + '  missing structuredContent');

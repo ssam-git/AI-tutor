@@ -157,11 +157,14 @@ footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);display
           tool failure vs protocol failure, and a server that has to ask a human before it acts</li>
         <li><b>Real message shapes</b>: <code>isError</code> vs a JSON-RPC error, <code>structuredContent</code>,
           and <code>input_required</code> retried with <code>requestState</code> + <code>inputResponses</code></li>
-        <li>Server in Python (FastMCP) or the TypeScript SDK; the client side is TypeScript</li>
+        <li>Server in Python (FastMCP) or the TypeScript SDK; the client in TypeScript or Python — and the
+          Python client is where you see <code>mode="legacy"</code> appear for the old revisions that could send
+          requests back</li>
       </ul>
       <span class="meta">
         <span class="pill num">4 scenarios</span><span class="pill num">3 revisions</span>
-        <span class="pill num">2 transports</span><span class="pill">shares the API sandbox engine</span>
+        <span class="pill num">2 transports</span><span class="pill num">2 client + 2 server languages</span>
+        <span class="pill">shares the API sandbox engine</span>
         <span class="pill">no network calls</span>
       </span>
       <span class="go">Open the MCP sandbox →</span>
