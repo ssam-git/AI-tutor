@@ -22,7 +22,8 @@
 html,body{height:100%;margin:0}
 html{overscroll-behavior:none}
 body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  display:grid;grid-template-rows:auto minmax(0,1fr) minmax(110px,25vh);gap:8px;overflow:hidden;
+  display:grid;grid-template-rows:auto minmax(0,1fr) var(--hgap,12px) var(--traceH,clamp(110px,25vh,45vh));
+  gap:8px;overflow:hidden;
   height:100vh;height:100dvh;
   padding:calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left))}
 .mono{font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;font-size:12.5px;line-height:1.6}
@@ -72,7 +73,21 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
 .chip.warn{border-color:#8a6a1f;color:#e6c07a;background:rgba(255,180,69,.08)}
 
 /* ---------- middle row ---------- */
-#mid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;min-height:0}
+/* ---------- resizable splits ---------- */
+/* the two grips are grid tracks: the vertical one sits between the code panes, the
+   horizontal one between the panes and the trace. Sizes live in --colA / --traceH so
+   CSS and JS share one source of truth; dragging writes px there. */
+#mid{display:grid;grid-template-columns:minmax(200px,var(--colA,1fr)) var(--vgap,12px) minmax(200px,1fr);gap:0;min-height:0}
+.vsplit,.hsplit{border:0;padding:0;background:transparent;-webkit-tap-highlight-color:transparent;
+  display:flex;align-items:center;justify-content:center;touch-action:none}
+.vsplit{cursor:col-resize}
+.hsplit{cursor:row-resize}
+.vsplit::before,.hsplit::before{content:"";border-radius:3px;background:#39465a;transition:background .15s}
+.vsplit::before{width:5px;height:54%;min-height:60px}
+.hsplit::before{width:min(220px,45%);height:5px;min-width:90px}
+.vsplit:hover::before,.hsplit:hover::before,
+.vsplit:focus-visible::before,.hsplit:focus-visible::before,
+.vsplit.drag::before,.hsplit.drag::before{background:var(--accent)}
 .pane{background:var(--pane);border:1px solid var(--line);border-radius:9px;display:flex;flex-direction:column;min-height:0}
 .pane>header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 10px;border-bottom:1px solid var(--line);
   background:var(--pane2);border-radius:9px 9px 0 0}
@@ -164,6 +179,7 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
   #tabs{display:flex}
   #tabs button{min-height:40px}
   #mid{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+  .vsplit,.hsplit{display:none}
   #mid .pane,#bot{display:none}
   body[data-view=trace] #mid{display:none}
   body[data-view=cli] #paneCli,body[data-view=srv] #paneSrv,body[data-view=trace] #bot{display:flex}
@@ -253,7 +269,8 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
   <details id="about" open>
     <summary>About this scenario</summary>
     <p id="desc"></p>
-    <p class="hint">space = run &nbsp;·&nbsp; the two buttons after Run step one line forward / back (or &rarr; and &larr;) &nbsp;·&nbsp; Notes / Explanations toggles the italic notes &nbsp;·&nbsp; R = rebuild after changing any selector &nbsp;·&nbsp; on a phone, swipe left / right between Client, Server and Trace</p>
+    <p class="hint">space = run &nbsp;·&nbsp; the two buttons after Run step one line forward / back (or &rarr; and &larr;) &nbsp;·&nbsp; Notes / Explanations toggles the italic notes &nbsp;·&nbsp; R = rebuild after changing any selector &nbsp;·&nbsp; drag the grips between panels to resize them, double-click a grip to reset
+    &nbsp;&middot;&nbsp; on a phone, swipe left / right between Client, Server and Trace</p>
   </details>
 </div>
 
@@ -274,6 +291,9 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
     </header>
     <div id="codeCli"></div>
   </div>
+  <div class="vsplit" id="vsplit" role="separator" tabindex="0" aria-orientation="vertical"
+       aria-label="Client and server widths" aria-valuemin="0" aria-valuemax="100"
+       title="Drag to resize the two code panels · arrows nudge · double-click splits evenly"></div>
   <div class="pane server" id="paneSrv">
     <header>
       <span class="who">SERVER (the API provider)</span>
@@ -285,6 +305,9 @@ h1 small{color:var(--dim);font-weight:400;font-size:11.5px}
   </div>
 </div>
 
+<div class="hsplit" id="hsplit" role="separator" tabindex="0" aria-orientation="horizontal"
+     aria-label="Trace height" aria-valuemin="0" aria-valuemax="100"
+     title="Drag to resize the trace · arrows nudge · double-click restores the default height"></div>
 <div id="bot">
   <header>
     <span class="who">REQUEST / RESPONSE TRACE</span>
@@ -1699,6 +1722,7 @@ el('noteBtn').onclick = () => { state.notes = !state.notes; el('noteBtn').textCo
 document.addEventListener('keydown', (ev) => {
   const tag = (ev.target && ev.target.tagName || '').toLowerCase();
   if (tag === 'select' || tag === 'input' || tag === 'textarea') return;
+  if (ev.target && ev.target.closest && ev.target.closest('.vsplit,.hsplit')) return;
   if (tag === 'button' && (ev.key === ' ' || ev.key === 'Enter')) return;  // let the focused control act on it
   if (ev.key === ' '){ ev.preventDefault(); el('runBtn').onclick(); }
   else if (ev.key === 'ArrowRight'){ ev.preventDefault(); el('nextBtn').onclick(); }
@@ -1738,6 +1762,93 @@ if (narrow()){
   document.querySelectorAll('#tabs [data-view]').forEach(b => { b.setAttribute('aria-label', 'show ' + b.textContent); b.textContent = b.dataset.view === 'cli' ? 'Client' : b.dataset.view === 'srv' ? 'Server' : 'Trace'; });
 }
 else { el('followBtn').classList.add('on'); }
+/* ==== SPLIT START ==== */
+/* ============================================================
+   resizable panes: drag a grip, arrows nudge it, double-click or Home resets,
+   and the size is remembered per page in localStorage.
+
+   Two rules keep this from fighting the layout:
+   - nothing is written to --colA / --traceH until the reader actually moves a grip,
+     so an untouched page keeps its CSS-defined even split at every window size;
+   - the trace is remembered as a fraction of the window height, not pixels, so it
+     scales when the window does instead of staying pinned at whatever it was.
+   ============================================================ */
+const PAGE = 'api';
+const sget = k => { try { const v = localStorage.getItem('ai-tutor.' + PAGE + '.' + k); return v === null ? null : +v; } catch (e) { return null; } };
+const sset = (k, v) => { try { localStorage.setItem('ai-tutor.' + PAGE + '.' + k, String(v)); } catch (e) {} };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const VGAP = 12, MINCOL = 200, MINTRACE = 90;
+let colUser = false, traceUser = false;
+
+function colA(){
+  const w = el('mid').getBoundingClientRect().width;
+  const v = getComputedStyle(el('mid')).getPropertyValue('--colA').trim();
+  return v.endsWith('px') ? parseFloat(v) : (w - VGAP) / 2;
+}
+function setColA(px, save){
+  const w = el('mid').getBoundingClientRect().width;
+  const v = clamp(px, MINCOL, Math.max(MINCOL, w - MINCOL - VGAP));
+  el('mid').style.setProperty('--colA', v + 'px');
+  el('vsplit').setAttribute('aria-valuenow', Math.round(v / Math.max(1, w) * 100));
+  if (save !== false){ colUser = true; sset('colA', Math.round(v)); }
+  setActive();
+}
+function traceH(){
+  const v = getComputedStyle(document.body).getPropertyValue('--traceH').trim();
+  return v.endsWith('px') ? parseFloat(v) : el('bot').getBoundingClientRect().height;
+}
+function setTraceH(px, save){
+  const chrome = el('top').offsetHeight + el('tabs').offsetHeight + 220;   // keep both areas usable
+  const v = clamp(px, MINTRACE, Math.max(MINTRACE, window.innerHeight - chrome));
+  document.body.style.setProperty('--traceH', v + 'px');
+  el('hsplit').setAttribute('aria-valuenow', Math.round(v / Math.max(1, window.innerHeight) * 100));
+  if (save !== false){ traceUser = true; sset('traceFrac', +(v / window.innerHeight).toFixed(4)); }
+  setActive();
+}
+function grip(node, axis, sign, get, set, resetTo){
+  node.addEventListener('pointerdown', ev => {
+    node.setPointerCapture(ev.pointerId); node.classList.add('drag');
+    const start = axis === 'x' ? ev.clientX : ev.clientY, base = get();
+    const move = e => set(base + sign * ((axis === 'x' ? e.clientX : e.clientY) - start), false);
+    const up = () => {
+      node.classList.remove('drag');
+      node.removeEventListener('pointermove', move);
+      node.removeEventListener('pointerup', up);
+      node.removeEventListener('pointercancel', up);
+      set(get(), true);
+    };
+    node.addEventListener('pointermove', move);
+    node.addEventListener('pointerup', up);
+    node.addEventListener('pointercancel', up);
+    ev.preventDefault();
+  });
+  node.addEventListener('dblclick', () => set(resetTo(), true));
+  node.addEventListener('keydown', ev => {
+    const step = ev.shiftKey ? 6 : 24;
+    const d = ({ ArrowLeft:-step, ArrowRight:step, ArrowUp:-step, ArrowDown:step })[ev.key] || 0;
+    if (ev.key === 'Home' || ev.key === 'Enter'){ ev.preventDefault(); ev.stopPropagation(); set(resetTo(), true); return; }
+    if (!d) return;
+    ev.preventDefault(); ev.stopPropagation();
+    set(get() + sign * d, true);
+  });
+}
+const evenSplit = () => (el('mid').getBoundingClientRect().width - VGAP) / 2;
+const defaultTrace = () => Math.round(window.innerHeight * 0.25);
+grip(el('vsplit'), 'x',  1, colA,   setColA,   evenSplit);
+grip(el('hsplit'), 'y', -1, traceH, setTraceH, defaultTrace);
+
+/* restore what the reader left, and nothing else */
+const savedCol = sget('colA');
+if (savedCol) setColA(savedCol);
+const savedFrac = sget('traceFrac');
+if (savedFrac) setTraceH(savedFrac * window.innerHeight);
+window.addEventListener('resize', () => {
+  if (colUser) setColA(colA(), false);                                   // keep the width, clamp it to the new window
+  if (traceUser) setTraceH(sget('traceFrac') * window.innerHeight, false); // scale with the window
+});
+
+/* ==== SPLIT END ==== */
+
 initChips();
 regen();
 </script>

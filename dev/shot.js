@@ -68,7 +68,9 @@ const PORT = 9340 + (process.pid % 40);
       console.log((j.name || j.out) + ' EVAL ' + JSON.stringify(r.result.value));
       await wait(j.after || 150);
     }
-    const s = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: !!j.beyond });
+    const s = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: !!j.beyond,
+      /* clip: {x,y,width,height,scale} in css px - zoom into one grip to see it clearly */
+      ...(j.clip ? { clip: { ...j.clip, scale: j.clip.scale || 2 } } : {}) });
     fs.writeFileSync(j.out, Buffer.from(s.data, 'base64'));
     console.log('wrote ' + j.out);
   }
